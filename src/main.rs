@@ -9,6 +9,7 @@ use std::{ptr, thread};
 mod app;
 mod editor;
 mod markers;
+mod stream;
 mod update;
 
 use app::run;
@@ -296,14 +297,73 @@ fn never_ask_update() -> bool {
     read_settings().get("never_ask_update").and_then(serde_json::Value::as_bool).unwrap_or(false)
 }
 
-fn set_never_ask_update(never: bool) {
+fn write_settings(settings: serde_json::Map<String, serde_json::Value>) {
     let Some(path) = settings_path() else { return };
-    let mut settings = read_settings();
-    settings.insert("never_ask_update".into(), never.into());
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
     let _ = std::fs::write(path, serde_json::Value::Object(settings).to_string());
+}
+
+fn set_never_ask_update(never: bool) {
+    let mut settings = read_settings();
+    settings.insert("never_ask_update".into(), never.into());
+    write_settings(settings);
+}
+
+const RECENT_MAX: usize = 10;
+
+/// Recently opened media, newest first (settings.json "recent").
+fn recent_media() -> Vec<String> {
+    read_settings()
+        .get("recent")
+        .and_then(serde_json::Value::as_array)
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default()
+}
+
+fn add_recent_media(path: &str) {
+    let mut list = recent_media();
+    list.retain(|p| !p.eq_ignore_ascii_case(path));
+    list.insert(0, path.to_string());
+    list.truncate(RECENT_MAX);
+    let mut settings = read_settings();
+    settings.insert("recent".into(), list.into());
+    write_settings(settings);
+}
+
+/// Video capture devices (webcams, capture cards), by the names DirectShow uses.
+fn list_cameras() -> Vec<String> {
+    use std::os::windows::process::CommandExt;
+    let script = "Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -in 'Camera','Image' -and $_.Status -eq 'OK' } | ForEach-Object { $_.Name }";
+    std::process::Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(0x0800_0000)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
+        .unwrap_or_default()
+}
+
+/// Everything the "Infos" panel shows, gathered from mpv and the file system.
+fn media_info(m: &Mpv) -> serde_json::Value {
+    let props = [
+        "filename", "path", "file-format", "file-size", "duration", "container-fps", "estimated-frame-count",
+        "video-codec", "audio-codec", "hwdec-current", "video-params", "audio-params", "metadata", "track-list",
+        "video-bitrate", "audio-bitrate", "estimated-vf-fps", "display-fps", "frame-drop-count",
+        "decoder-frame-drop-count", "avsync", "demuxer-cache-duration", "speed",
+    ];
+    let mut out = serde_json::Map::new();
+    for p in props {
+        out.insert(p.into(), m.get(p).map_or(serde_json::Value::Null, serde_json::Value::String));
+    }
+    if let Some(meta) = m.get("path").and_then(|p| std::fs::metadata(p).ok()) {
+        let ms = |t: std::io::Result<std::time::SystemTime>| {
+            t.ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64)
+        };
+        out.insert("modified".into(), ms(meta.modified()).into());
+        out.insert("created".into(), ms(meta.created()).into());
+    }
+    serde_json::Value::Object(out)
 }
 
 fn open_release_page() {

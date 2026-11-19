@@ -44,13 +44,13 @@ window.vb = {
   },
   // Download progress (0-100), then "install" while Windows Installer takes over.
   updateProgress(p) {
-    document.querySelector(".modal").classList.add("installing");
+    $("updateBack").querySelector(".modal").classList.add("installing");
     const bar = $("updateBar");
     if (p === "install") { bar.classList.add("busy"); $("updateLabel").textContent = "Installation… Visiblement va redémarrer"; }
     else { bar.classList.remove("busy"); bar.style.width = p + "%"; $("updateLabel").textContent = `Téléchargement… ${p} %`; }
   },
   updateFailed() {
-    document.querySelector(".modal").classList.remove("installing");
+    $("updateBack").querySelector(".modal").classList.remove("installing");
     canInstall = false; $("updateGo").textContent = "Télécharger";
     $("updateBack").classList.add("open");
     toast("Échec de la mise à jour : télécharge-la depuis la page des versions");
@@ -69,6 +69,8 @@ function render() {
   const t = num("time-pos"), d = num("duration");
   const name = idle ? "Visiblement" : (st.filename || "Visiblement");
   if ($("title").textContent !== name) $("title").textContent = name;
+  const vp = json("video-params");
+  $("res").textContent = !idle && !audio && vp && vp.w ? `${vp.w} × ${vp.h}` : "";
   const count = num("playlist-count"), pos = num("playlist-pos");
   $("pos").textContent = !idle && count > 1 ? `${pos + 1} / ${count}` : "";
   const frame = st["estimated-frame-number"], frames = st["estimated-frame-count"];
@@ -477,12 +479,12 @@ function moveGrab(ev) {
 function endGrab() { if (grabbing) { grabbing = null; send({ t: "win", a: "grab-end" }); } }
 $("titlebar").addEventListener("pointerdown", ev => {
   // (pointerdown has no click count: detail is always 0, so no filter on it)
-  if (ev.button === 0 && !ev.target.closest(".wbtn")) startGrab(ev, "");
+  if (ev.button === 0 && !ev.target.closest(".wbtn, .nav")) startGrab(ev, "");
 });
 $("titlebar").addEventListener("pointermove", moveGrab);
 $("titlebar").addEventListener("pointerup", endGrab);
 $("titlebar").addEventListener("lostpointercapture", endGrab);
-$("titlebar").addEventListener("dblclick", ev => { if (!ev.target.closest(".wbtn")) send({ t: "win", a: "max" }); });
+$("titlebar").addEventListener("dblclick", ev => { if (!ev.target.closest(".wbtn, .nav")) send({ t: "win", a: "max" }); });
 $("wMin").onclick = () => send({ t: "win", a: "min" });
 $("wMax").onclick = () => send({ t: "win", a: "max" });
 $("wClose").onclick = () => send({ t: "win", a: "close" });
@@ -496,7 +498,12 @@ document.querySelectorAll(".grip").forEach(g => {
 // --- Keyboard
 addEventListener("keydown", ev => {
   const k = ev.key, c = ev.ctrlKey;
-  if (k === "Escape") { if (anyMenuOpen()) closeAll(); else if (win.classList.contains("fullscreen")) $("fs").onclick(); return; }
+  if (k === "Escape") {
+    const open = document.querySelector(".modal-back.open:not(#updateBack)");
+    if (open) closeModal(open); else if (closeNav()) {} else if (anyMenuOpen()) closeAll(); else if (win.classList.contains("fullscreen")) $("fs").onclick();
+    return;
+  }
+  if (document.querySelector(".modal-back.open")) { if (k === "Enter" && $("netBack").classList.contains("open")) $("netGo").click(); return; }
   if (c && k.toLowerCase() === "o") { ev.preventDefault(); actions.open(); return; }
   if (c && k.toLowerCase() === "q") { ev.preventDefault(); actions.quit(); return; }
   if (stage.classList.contains("idle")) return;
@@ -550,5 +557,142 @@ $("updBtn").onclick = () => {
   else { $("updText").textContent = "Recherche…"; send({ t: "check-update" }); }
 };
 $("updateLater").onclick = () => closeUpdate(false);
+
+// --- Navigation bar (Média / Éditer / Infos): menus open on hover, or on click
+const navItems = [...document.querySelectorAll(".nav-item")];
+let navTimer;
+function openNav(item) { navItems.forEach(i => i.classList.toggle("open", i === item && !!item.querySelector(".dropdown"))); closeAll(); hideTip(); }
+function closeNav() { const was = navItems.some(i => i.classList.contains("open")); navItems.forEach(i => i.classList.remove("open")); return was; }
+navItems.forEach(item => {
+  item.addEventListener("mouseenter", () => { clearTimeout(navTimer); navTimer = setTimeout(() => openNav(item), navItems.some(i => i.classList.contains("open")) ? 0 : 90); });
+  item.addEventListener("mouseleave", () => { clearTimeout(navTimer); navTimer = setTimeout(closeNav, 220); });
+  item.querySelector(".nav-btn").addEventListener("click", () => item.classList.contains("open") ? closeNav() : openNav(item));
+});
+addEventListener("pointerdown", ev => { if (!ev.target.closest(".nav")) closeNav(); });
+
+const modalOpen = id => { closeNav(); closeAll(); $(id).classList.add("open"); };
+function closeModal(back) { back.classList.remove("open"); if (back.id === "infoBack") clearInterval(infoTimer); }
+document.querySelectorAll(".modal-back:not(#updateBack)").forEach(back => {
+  back.addEventListener("pointerdown", ev => { if (ev.target === back) closeModal(back); });
+  back.querySelectorAll("[data-close]").forEach(b => b.onclick = () => closeModal(back));
+});
+
+Object.assign(actions, {
+  openFiles: () => send({ t: "open-files" }),
+  openFolder: () => send({ t: "open-folder" }),
+  openUrl: () => { modalOpen("netBack"); setTimeout(() => $("netUrl").focus(), 50); },
+  openCamera: () => { $("camText").textContent = "Recherche des caméras…"; $("camList").replaceChildren(); modalOpen("camBack"); send({ t: "list-cameras" }); },
+});
+document.querySelectorAll(".dropdown .dd[data-act]").forEach(b => b.addEventListener("click", () => { closeNav(); actions[b.dataset.act]?.(); }));
+$("netExamples").querySelectorAll("button").forEach(b => b.onclick = () => {
+  const v = b.textContent.replace("…", ""); $("netUrl").value = v; $("netUrl").focus();
+  $("netUrl").setSelectionRange(v.length, v.length);
+});
+$("netGo").onclick = () => { const url = $("netUrl").value.trim(); if (!url) return; send({ t: "open-url", url }); closeModal($("netBack")); };
+
+// Recent media (Rust keeps the list in settings.json and sends it here)
+vb.recent = list => {
+  const items = (list || []).map(path => {
+    const name = path.split(/[\\/]/).pop(), dir = path.slice(0, path.length - name.length);
+    const b = el("button", "dd");
+    const icon = el("i", "ico"); icon.dataset.i = "file"; setSrc(icon);
+    const text = el("span", "dd-text"); text.append(el("b", "", name), el("small", "", dir));
+    b.append(icon, text);
+    b.onclick = () => { closeNav(); send({ t: "open-path", path }); };
+    return b;
+  });
+  $("recentMenu").replaceChildren(...(items.length ? items : [el("div", "dd disabled", "Aucun média récent")]));
+};
+
+// Capture devices
+vb.cameras = list => {
+  $("camText").textContent = list.length ? "Choisissez une caméra ou une carte d'acquisition." : "Aucun périphérique de capture détecté.";
+  $("camList").replaceChildren(...list.map(name => {
+    const b = el("button");
+    const icon = el("i", "ico"); icon.dataset.i = "webcam"; setSrc(icon);
+    b.append(icon, el("span", "", name));
+    b.onclick = () => { send({ t: "open-camera", name }); closeModal($("camBack")); };
+    return b;
+  }));
+};
+
+// --- Infos panel: Général, Métadonnées, Codec, Statistiques (statistics refresh every second)
+let info = null, infoTab = "general", infoTimer;
+const parse = v => { try { return JSON.parse(v ?? "null"); } catch { return null; } };
+const nf = (v, d = 0) => Number(v).toLocaleString("fr-FR", { maximumFractionDigits: d, minimumFractionDigits: d });
+const bytes = b => { b = +b; if (!b) return "–"; const u = ["o", "Ko", "Mo", "Go", "To"]; let i = 0; while (b >= 1024 && i < u.length - 1) { b /= 1024; i++; } return `${nf(b, i ? 1 : 0)} ${u[i]}`; };
+const rate = bps => { bps = +bps; if (!bps) return "–"; return bps >= 1e6 ? `${nf(bps / 1e6, 1)} Mb/s` : `${nf(bps / 1e3, 0)} kb/s`; };
+const date = ms => ms ? new Date(ms).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" }) : "–";
+const clockLong = s => { s = +s; if (!Number.isFinite(s)) return "–"; const ms = Math.round((s % 1) * 1000); return `${fmt(s)}.${String(ms).padStart(3, "0")}`; };
+function rows(pairs) {
+  const g = el("div", "rows");
+  for (const [k, v] of pairs) if (v !== undefined && v !== null && v !== "") g.append(el("div", "", k), el("div", "", String(v)));
+  return g;
+}
+const TRACK = { video: "Vidéo", audio: "Audio", sub: "Sous-titres" };
+// FFmpeg names containers by demuxer ("mov,mp4,m4a,3gp,3g2,mj2"): show something readable.
+const FORMATS = [[/^mov,mp4/, "QuickTime / MP4"], [/^matroska/, "Matroska / WebM"], [/^avi/, "AVI"], [/^wav/, "WAV"],
+  [/^mp3/, "MP3"], [/^flac/, "FLAC"], [/^gif/, "GIF"], [/^webp/, "WebP"], [/^mpegts/, "MPEG-TS"], [/^mxf/, "MXF"], [/^hls/, "HLS"]];
+const formatName = f => f ? (FORMATS.find(([re]) => re.test(f))?.[1] ?? f.split(",")[0].toUpperCase()) : null;
+function renderInfo() {
+  if (!info) return;
+  const d = info, body = [];
+  const vp = parse(d["video-params"]) || {}, ap = parse(d["audio-params"]) || {};
+  const dur = +d.duration, size = +d["file-size"];
+  $("infoName").textContent = d.filename || "Aucun média";
+  $("infoSub").textContent = vp.w ? `${vp.w} × ${vp.h}` : "";
+  if (infoTab === "general") {
+    const path = d.path || "", name = path.split(/[\\/]/).pop();
+    body.push(rows([
+      ["Nom", d.filename], ["Dossier", path.slice(0, path.length - name.length) || "–"], ["Taille", bytes(size)],
+      ["Durée", dur ? clockLong(dur) : "–"], ["Format", formatName(d["file-format"])],
+      ["Résolution", vp.w ? `${vp.w} × ${vp.h}` : null], ["Images/s", d["container-fps"] ? nf(d["container-fps"], 3) : null],
+      ["Nombre d'images", d["estimated-frame-count"]], ["Débit moyen", size && dur ? rate(size * 8 / dur) : null],
+      ["Créé le", date(d.created)], ["Modifié le", date(d.modified)],
+    ]));
+  } else if (infoTab === "meta") {
+    const meta = parse(d.metadata) || {}, entries = Object.entries(meta);
+    body.push(entries.length ? rows(entries) : el("div", "empty", "Ce fichier ne contient pas de métadonnées."));
+  } else if (infoTab === "codec") {
+    for (const t of parse(d["track-list"]) || []) {
+      body.push(el("h3", "", `${TRACK[t.type] || t.type} ${t.id}${t.selected ? " · active" : ""}`));
+      const common = [["Codec", t["codec-desc"] ? `${t.codec} (${t["codec-desc"]})` : t.codec], ["Langue", t.lang], ["Titre", t.title]];
+      if (t.type === "video") body.push(rows([...common,
+        ["Dimensions", t["demux-w"] ? `${t["demux-w"]} × ${t["demux-h"]}` : null], ["Images/s", t["demux-fps"] ? nf(t["demux-fps"], 3) : null],
+        ...(t.selected ? [["Format de pixel", vp.pixelformat], ["Couleurs", [vp.colormatrix, vp.primaries, vp.gamma].filter(Boolean).join(" · ")],
+          ["Transparence", vp.alpha && vp.alpha !== "auto" ? vp.alpha : null], ["Décodage", d["hwdec-current"] && d["hwdec-current"] !== "no" ? `GPU (${d["hwdec-current"]})` : "Processeur"]] : []),
+      ]));
+      else if (t.type === "audio") body.push(rows([...common,
+        ["Fréquence", t["demux-samplerate"] ? `${nf(t["demux-samplerate"])} Hz` : null], ["Canaux", t["demux-channel-count"] || ap["channel-count"]],
+        ...(t.selected ? [["Échantillons", ap.format]] : []),
+      ]));
+      else body.push(rows(common));
+    }
+    if (!body.length) body.push(el("div", "empty", "Aucune piste."));
+  } else {
+    body.push(rows([
+      ["Débit vidéo", rate(d["video-bitrate"])], ["Débit audio", rate(d["audio-bitrate"])],
+      ["Images/s affichées", d["estimated-vf-fps"] ? nf(d["estimated-vf-fps"], 2) : "–"], ["Fréquence de l'écran", d["display-fps"] ? `${nf(d["display-fps"], 2)} Hz` : "–"],
+      ["Images perdues", `${d["frame-drop-count"] ?? 0} à l'affichage · ${d["decoder-frame-drop-count"] ?? 0} au décodage`],
+      ["Écart audio / vidéo", d.avsync ? `${nf(d.avsync * 1000, 1)} ms` : "–"], ["Mémoire tampon", d["demuxer-cache-duration"] ? `${nf(d["demuxer-cache-duration"], 1)} s` : "–"],
+      ["Vitesse", d.speed ? `${nf(d.speed, 2)}×` : "–"],
+    ]));
+  }
+  $("infoBody").replaceChildren(...body);
+}
+function moveTabPill() {
+  const on = $("infoTabs").querySelector("button.on"), pill = $("infoTabs").querySelector(".pill");
+  pill.style.width = on.offsetWidth + "px"; pill.style.translate = (on.offsetLeft - 3) + "px 0";
+}
+$("infoTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
+  $("infoTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  infoTab = b.dataset.tab; moveTabPill(); renderInfo();
+});
+vb.info = data => { info = data; renderInfo(); };
+$("infoBtn").onclick = () => {
+  closeNav(); modalOpen("infoBack"); send({ t: "info" });
+  requestAnimationFrame(moveTabPill);
+  clearInterval(infoTimer); infoTimer = setInterval(() => { if (infoTab === "stats") send({ t: "info" }); }, 1000);
+};
 
 send({ t: "ready" });

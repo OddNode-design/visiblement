@@ -24,6 +24,9 @@
     padding: 0 4px 0 12px; background: var(--bar); border-bottom: 1px solid rgba(255, 255, 255, .06);
     border-radius: 10px 10px 0 0; }
   .titlebar img { width: 22px; height: 22px; border-radius: 6px; pointer-events: none; }
+  .titlebar { position: relative; z-index: 50; }
+  .titlebar .res { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; pointer-events: none; white-space: nowrap; }
+  .titlebar .res:empty { display: none; }
   .titlebar .title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; pointer-events: none; }
   .titlebar .grow { flex: 1; align-self: stretch; }
   .titlebar .pos { font-size: 12px; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 999px;
@@ -229,3 +232,74 @@
   .modal .progress .label { margin-top: 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+  /* Navigation bar: a thin pill centred in the title bar; menus open on hover */
+  .nav { position: absolute; left: 50%; top: 50%; translate: -50% -50%; display: flex; gap: 2px; padding: 3px;
+    border-radius: 999px; background: rgba(255, 255, 255, .045); border: 1px solid rgba(255, 255, 255, .06); }
+  .nav-item { position: relative; }
+  .nav-btn { all: unset; height: 24px; padding: 0 12px; border-radius: 999px; display: flex; align-items: center; gap: 4px;
+    font-size: 12.5px; font-weight: 600; color: rgba(244, 242, 250, .8); cursor: pointer; transition: background .15s, color .15s; }
+  .nav-btn:hover, .nav-item.open .nav-btn { background: rgba(255, 255, 255, .09); color: var(--fg); }
+  .nav-btn .chev { width: 12px; height: 12px; transition: rotate .2s var(--ease-out); }
+  .nav-item.open .chev { rotate: 180deg; }
+  .dropdown { position: absolute; top: calc(100% + 9px); left: 50%; min-width: 320px; padding: 6px; border-radius: 14px;
+    background: #1d1c21; border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+    opacity: 0; visibility: hidden; transform: translate(-50%, -4px) scale(.98); transform-origin: top center;
+    transition: opacity .12s, transform .12s, visibility 0s .12s; z-index: 60; }
+  .nav-item.open > .dropdown { opacity: 1; visibility: visible; transform: translate(-50%, 0);
+    transition: opacity .18s var(--ease-out), transform .22s var(--ease-out), visibility 0s; }
+  .dropdown .sep { height: 1px; margin: 5px 8px; background: var(--line); }
+  /* Invisible bridge over the gap, so moving from the button to the menu never closes it */
+  .dropdown::before { content: ""; position: absolute; left: 0; right: 0; top: -12px; height: 12px; }
+  .subdrop::before { top: 0; bottom: 0; left: -12px; right: auto; width: 12px; height: auto; }
+  .dd { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: flex-start; gap: 12px; padding: 9px 10px;
+    border-radius: 10px; cursor: pointer; position: relative; }
+  .dd:hover { background: rgba(255, 255, 255, .06); }
+  .dd > .ico { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--muted); }
+  .dd:hover > .ico { color: var(--fg); }
+  .dd-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .dd-text b { font-size: 13px; font-weight: 600; }
+  .dd-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dd kbd { font: 12px "Segoe UI", system-ui, sans-serif; color: var(--muted); margin-top: 1px; }
+  .dd .more { width: 14px; height: 14px; margin-top: 3px; color: var(--muted); }
+  .dd.disabled { opacity: .45; pointer-events: none; }
+  /* Recent media: opens to the right on hover */
+  .subdrop { top: -7px; left: 100%; transform: translate(4px, 0) scale(.98); transform-origin: top left; min-width: 340px; max-width: 420px; }
+  .sub:hover > .subdrop, .sub.open > .subdrop { opacity: 1; visibility: visible; transform: translate(8px, 0);
+    transition: opacity .18s var(--ease-out) .08s, transform .22s var(--ease-out) .08s, visibility 0s .08s; }
+
+  /* Forms and the info panel reuse the modal card */
+  .modal.form { text-align: left; }
+  .modal.form p { margin-bottom: 12px; }
+  .field { all: unset; box-sizing: border-box; width: 100%; height: 38px; padding: 0 12px; margin-bottom: 16px; border-radius: 10px;
+    background: rgba(255, 255, 255, .06); border: 1px solid var(--line); font-size: 13px; color: var(--fg); }
+  .field:focus { border-color: rgba(255, 255, 255, .35); }
+  /* Address examples: click one to put it in the field */
+  .examples { display: flex; flex-direction: column; gap: 1px; margin: -6px 0 16px; }
+  .examples button { all: unset; padding: 3px 6px; margin-left: -6px; border-radius: 6px; cursor: pointer;
+    font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace; color: var(--muted); }
+  .examples button:hover { background: rgba(255, 255, 255, .06); color: var(--fg); }
+  .cam-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+  .cam-list button { all: unset; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px;
+    background: rgba(255, 255, 255, .05); font-size: 13px; cursor: pointer; }
+  .cam-list button:hover { background: rgba(255, 255, 255, .1); }
+  .cam-list .ico { width: 18px; height: 18px; color: var(--muted); }
+
+  .modal.info { width: min(580px, calc(100vw - 32px)); text-align: left; padding: 20px; }
+  .info-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; min-width: 0; }
+  .info-head h2 { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info-head span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  /* transitions.dev "Tabs sliding": a pill follows the active tab */
+  .tabs { position: relative; display: flex; padding: 3px; margin-bottom: 14px; border-radius: 10px; background: rgba(255, 255, 255, .06); }
+  .tabs button { all: unset; position: relative; z-index: 1; flex: 1; height: 28px; text-align: center; border-radius: 8px;
+    font-size: 12.5px; font-weight: 600; color: var(--muted); cursor: pointer; transition: color .2s; }
+  .tabs button.on { color: var(--bar); }
+  .tabs .pill { position: absolute; top: 3px; bottom: 3px; left: 3px; border-radius: 8px; background: var(--fg);
+    transition: translate .28s var(--ease-out), width .28s var(--ease-out); }
+  .info-body { max-height: min(340px, 55vh); overflow: auto; margin-bottom: 16px; }
+  .info-body h3 { margin: 12px 0 4px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .info-body h3:first-child { margin-top: 0; }
+  .rows { display: grid; grid-template-columns: 150px 1fr; column-gap: 14px; }
+  .rows div { padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, .06); font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
+  .rows div:nth-child(odd) { color: var(--muted); }
+  .info-body .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }

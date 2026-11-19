@@ -10,6 +10,36 @@
   <div class="titlebar" id="titlebar">
     <img src="icon.svg" alt="">
     <span class="title" id="title">Visiblement</span>
+    <span class="res" id="res"></span>
+    <nav class="nav" id="nav">
+      <div class="nav-item">
+        <button class="nav-btn">Média <i class="ico chev" data-i="chevron-down"></i></button>
+        <div class="dropdown">
+          <button class="dd" data-act="open"><i class="ico" data-i="file"></i><span class="dd-text"><b>Ouvrir un fichier</b><small>Une vidéo, une image ou un son</small></span><kbd>Ctrl+O</kbd></button>
+          <button class="dd" data-act="openFiles"><i class="ico" data-i="files"></i><span class="dd-text"><b>Ouvrir plusieurs fichiers</b><small>Ils s'enchaînent dans la playlist</small></span></button>
+          <button class="dd" data-act="openFolder"><i class="ico" data-i="folder-open"></i><span class="dd-text"><b>Ouvrir un dossier</b><small>Tous les médias du dossier, dans l'ordre</small></span></button>
+          <button class="dd" data-act="openUrl"><i class="ico" data-i="globe"></i><span class="dd-text"><b>Ouvrir un flux réseau</b><small>Adresse http, rtsp, srt, udp…</small></span></button>
+          <button class="dd" data-act="openCamera"><i class="ico" data-i="webcam"></i><span class="dd-text"><b>Ouvrir un périphérique de capture</b><small>Webcam ou carte d'acquisition</small></span></button>
+          <div class="sep"></div>
+          <div class="dd sub" id="recentItem"><i class="ico" data-i="history"></i><span class="dd-text"><b>Médias récents</b><small>Les derniers fichiers ouverts</small></span><i class="ico more" data-i="chevron-right"></i>
+            <div class="dropdown subdrop" id="recentMenu"></div>
+          </div>
+        </div>
+      </div>
+      <div class="nav-item">
+        <button class="nav-btn">Éditer <i class="ico chev" data-i="chevron-down"></i></button>
+        <div class="dropdown">
+          <button class="dd" data-act="markIn"><i class="ico" data-i="arrow-left-to-line"></i><span class="dd-text"><b>Début de l'extrait ici</b><small>Place le point d'entrée</small></span><kbd>B</kbd></button>
+          <button class="dd" data-act="markOut"><i class="ico" data-i="arrow-right-to-line"></i><span class="dd-text"><b>Fin de l'extrait ici</b><small>Place le point de sortie</small></span><kbd>N</kbd></button>
+          <button class="dd" data-act="clearSel"><i class="ico" data-i="eraser"></i><span class="dd-text"><b>Effacer la sélection</b><small>Retire les points d'entrée et de sortie</small></span><kbd>Alt+X</kbd></button>
+          <button class="dd" data-act="export"><i class="ico" data-i="scissors"></i><span class="dd-text"><b>Enregistrer l'extrait sous…</b><small>Dans le format du fichier d'origine</small></span><kbd>Ctrl+E</kbd></button>
+          <div class="sep"></div>
+          <button class="dd" data-act="save"><i class="ico" data-i="image-down"></i><span class="dd-text"><b>Enregistrer la frame sous…</b><small>PNG, JPG ou WebP, en pleine résolution</small></span><kbd>Ctrl+S</kbd></button>
+          <button class="dd" data-act="copy"><i class="ico" data-i="copy"></i><span class="dd-text"><b>Copier la frame</b><small>Prête à coller dans une autre app</small></span><kbd>Ctrl+C</kbd></button>
+        </div>
+      </div>
+      <div class="nav-item"><button class="nav-btn" id="infoBtn">Infos</button></div>
+    </nav>
     <span class="grow"></span>
     <span class="pos" id="pos"></span>
     <span class="wbtn" id="wMin" title="Réduire"><i class="ico" data-i="minus"></i></span>
@@ -99,6 +129,46 @@
         <button class="go" id="updateGo">Installer</button>
       </div>
       <div class="progress"><div class="track"><div class="bar" id="updateBar"></div></div><div class="label" id="updateLabel"></div></div>
+    </div>
+  </div>
+  <div class="modal-back" id="netBack">
+    <div class="modal form" role="dialog" aria-labelledby="netTitle">
+      <h2 id="netTitle">Ouvrir un flux réseau</h2>
+      <p>Entrez l'adresse d'un flux ou d'une vidéo en ligne.</p>
+      <input class="field" id="netUrl" type="text" placeholder="https://… · rtsp://… · rtp://@:1234" spellcheck="false">
+      <div class="examples" id="netExamples">
+        <button>http://www.example.com/stream.avi</button>
+        <button>rtp://@:1234</button>
+        <button>mms://mms.examples.com/stream.asx</button>
+        <button>rtsp://server.example.org:8080/test.sdp</button>
+        <button>https://www.youtube.com/watch?v=…</button>
+      </div>
+      <div class="actions">
+        <button class="later" data-close>Annuler</button>
+        <button class="go" id="netGo">Ouvrir</button>
+      </div>
+    </div>
+  </div>
+  <div class="modal-back" id="camBack">
+    <div class="modal form" role="dialog" aria-labelledby="camTitle">
+      <h2 id="camTitle">Périphérique de capture</h2>
+      <p id="camText">Recherche des caméras…</p>
+      <div class="cam-list" id="camList"></div>
+      <div class="actions"><button class="later" data-close>Fermer</button></div>
+    </div>
+  </div>
+  <div class="modal-back" id="infoBack">
+    <div class="modal info" role="dialog" aria-labelledby="infoName">
+      <div class="info-head"><h2 id="infoName">Infos</h2><span id="infoSub"></span></div>
+      <div class="tabs" id="infoTabs">
+        <span class="pill"></span>
+        <button class="on" data-tab="general">Général</button>
+        <button data-tab="meta">Métadonnées</button>
+        <button data-tab="codec">Codec</button>
+        <button data-tab="stats">Statistiques</button>
+      </div>
+      <div class="info-body" id="infoBody"></div>
+      <div class="actions"><button class="later" data-close>Fermer</button></div>
     </div>
   </div>
   <div class="edge"></div>

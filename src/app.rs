@@ -152,6 +152,11 @@ fn mpv_events(m: Mpv) {
             }
             EVENT_FILE_LOADED => {
                 send(UserEvent::Loading(false));
+                // Recent media: local files only (not streams, cameras or folders).
+                if let Some(path) = m.get("path").filter(|p| Path::new(p).is_file()) {
+                    crate::add_recent_media(&path);
+                    eval_js(&format!("window.vb && vb.recent({})", json!(crate::recent_media())));
+                }
                 send(UserEvent::VideoSize(m.num("video-params/dw"), m.num("video-params/dh")));
             }
             EVENT_END_FILE => send(UserEvent::Loading(false)),
@@ -327,6 +332,10 @@ pub fn run() -> Result<(), String> {
     for (k, v) in OPTIONS {
         m.option(k, v);
     }
+    // Web video pages (YouTube…): mpv's ytdl hook uses the yt-dlp the app downloads on demand.
+    if let Some(ytdlp) = crate::stream::ytdlp_path() {
+        m.option("script-opts", &format!("ytdl_hook-ytdl_path={}", ytdlp.to_string_lossy()));
+    }
     // Troubleshooting: VISIBLEMENT_LOG=C:\path\log.txt writes mpv's log there.
     if let Some(log) = std::env::var_os("VISIBLEMENT_LOG") {
         m.option("log-file", &log.to_string_lossy());
@@ -427,6 +436,7 @@ pub fn run() -> Result<(), String> {
                                 show_update(&webview, tag, *prompt);
                             }
                             eval(&webview, &format!("window.vb && vb.version({})", json!(env!("CARGO_PKG_VERSION"))));
+                            eval(&webview, &format!("window.vb && vb.recent({})", json!(crate::recent_media())));
                             let mut all = Map::new();
                             for p in OBSERVED {
                                 all.insert(p.to_string(), m.get(p).map_or(Value::Null, Value::String));
@@ -534,10 +544,37 @@ pub fn run() -> Result<(), String> {
                         "copy-frame" => workers.push(copy_frame(m)),
                         "export" => workers.push(crate::editor::export(m)),
                         "open" => {
-                            if let Some(files) = rfd::FileDialog::new().set_title("Ouvrir").pick_files() {
+                            if let Some(file) = rfd::FileDialog::new().set_title("Ouvrir un fichier").pick_file() {
+                                load_paths(&m, &[file]);
+                            }
+                        }
+                        "open-files" => {
+                            if let Some(files) = rfd::FileDialog::new().set_title("Ouvrir plusieurs fichiers").pick_files() {
                                 load_paths(&m, &files);
                             }
                         }
+                        // mpv plays a folder as a playlist of the media it contains.
+                        "open-folder" => {
+                            if let Some(dir) = rfd::FileDialog::new().set_title("Ouvrir un dossier").pick_folder() {
+                                load_paths(&m, &[dir]);
+                            }
+                        }
+                        "open-path" => {
+                            let path = s("path");
+                            if Path::new(&path).exists() {
+                                load_paths(&m, &[PathBuf::from(path)]);
+                            } else {
+                                toast("Ce fichier n'existe plus");
+                            }
+                        }
+                        "open-url" => crate::stream::open(m, &s("url")),
+                        "list-cameras" => {
+                            thread::spawn(|| eval_js(&format!("window.vb && vb.cameras({})", json!(crate::list_cameras()))));
+                        }
+                        "open-camera" => {
+                            m.cmd(&["loadfile", &format!("av://dshow:video={}", s("name")), "replace"]);
+                        }
+                        "info" => eval(&webview, &format!("window.vb && vb.info({})", crate::media_info(&m))),
                         "open-subs" => {
                             if let Some(f) = rfd::FileDialog::new()
                                 .set_title("Charger des sous-titres")
