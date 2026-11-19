@@ -2,43 +2,50 @@
 
 <h1 align="center">Visiblement</h1>
 
-<p align="center">Un lecteur vidéo léger et rapide pour Windows. Il lit à peu près tout, visiblement.</p>
+<p align="center">Lecteur vidéo pour Windows, construit sur mpv. Vous y glissez une vidéo, une image ou un son et il le lit avec le décodage de votre carte graphique.</p>
 
-- **Tous les formats** que FFmpeg sait lire : mp4, mov (ProRes inclus), mkv, webm, avi, gif, webp animé, apng, images…
-- **Rapide** : décodage GPU (NVDEC, D3D11VA…) avec repli automatique sur le CPU, rendu `gpu-next`, basé sur [libmpv](https://mpv.io).
-- **Transparence** : ProRes 4444, PNG, QuickTime Animation… Le bouton damier (touche `T`) affiche ou cache un damier derrière les zones transparentes.
-- **Vertical, 4K, 8K** : la fenêtre s'adapte à l'écran ; décodage GPU jusqu'en 8K (HEVC, AV1, VP9 selon la carte graphique).
-- **Marqueurs audio** : les marqueurs d'un WAV (cue points, marqueurs After Effects / Premiere / Audition) apparaissent sur la barre de lecture, avec leur nom au survol.
-- **Mini éditeur** : `B` / `N` pour le début et la fin, `Ctrl+E` pour enregistrer l'extrait (même format que l'original : WAV 24 bits, ProRes 4444 avec alpha, H.264…).
-- **Le dossier en playlist** : précédent / suivant passent aux autres vidéos du même dossier.
-- **Frame par frame** : numéro de frame affiché, boutons ‹ › ou touches `,` et `.` pour reculer / avancer d'une image.
-- **Clic droit** : enregistrer la frame affichée (PNG, JPG, WebP) ou la copier dans le presse-papiers.
-- **Mises à jour** : au lancement, une fenêtre propose la nouvelle version si elle existe.
-- **Rien à installer** : un dossier à dézipper (WebView2, qui affiche l'interface, est déjà présent sur Windows 10 et 11).
+## Ce que vous pouvez ouvrir
+
+Visiblement lit les formats que FFmpeg connaît : mp4, mov, mkv, webm, avi, gif, webp animé, apng, images fixes, wav, mp3, flac. Votre carte graphique décode le H.264, le HEVC, l'AV1 et le VP9 jusqu'en 8K (NVDEC ou D3D11VA). Le ProRes passe par le processeur, sur tous les cœurs.
+
+À l'ouverture, la fenêtre prend les proportions de la vidéo sans dépasser 90 % de l'écran. Une vidéo verticale ou en 8K tient donc à l'écran.
+
+## Ce que vous pouvez faire
+
+- **Vérifier une transparence.** Sur un ProRes 4444 exporté avec sa couche alpha, un WebM VP9 alpha ou un PNG, le bouton damier (touche `T`) affiche un damier derrière les zones transparentes. Un ProRes 4444 exporté en « RVB » seul n'a pas d'alpha et le damier n'y montre rien.
+- **Avancer image par image.** Les boutons ‹ › ou les touches `,` et `.` déplacent la lecture d'une image. Le numéro de frame reste affiché dans la barre.
+- **Parcourir un dossier.** Précédent et suivant passent aux autres fichiers du dossier de la vidéo ouverte.
+- **Lire les marqueurs d'un WAV.** Les cue points et les marqueurs posés dans After Effects, Premiere ou Audition apparaissent sur la barre de lecture. Au survol, le nom du marqueur remplace le timecode. Maintenez Maj en faisant glisser la tête de lecture pour l'aimanter au marqueur le plus proche.
+- **Couper un extrait.** `B` marque le début, `N` la fin, `Ctrl+E` enregistre l'extrait. Visiblement réencode dans le format d'origine : un WAV 24 bits reste en 24 bits, un ProRes 4444 garde son alpha.
+- **Sauver une image.** Le clic droit enregistre la frame affichée en PNG, JPG ou WebP, ou la copie dans le presse-papiers pour la coller dans Photoshop.
+
+Pendant la lecture d'un fichier audio, la mascotte remplace ses yeux par une forme d'onde et une sphère blanche ondule derrière elle.
 
 ## Installation
 
-**Installeur (recommandé)** : télécharger `Visiblement-x.y.z-x64.msi` dans les [Releases](../../releases/latest) et le lancer. Installation pour votre compte, sans droits administrateur, avec un raccourci dans le menu Démarrer et « Ouvrir avec » pour les vidéos et l'audio. Une nouvelle version s'installe par-dessus l'ancienne.
+Dans les [Releases](../../releases/latest), prenez l'un des deux fichiers :
 
-**Portable** : `Visiblement-windows-x64.zip`, à dézipper où vous voulez, puis lancer `visiblement.exe`.
+- `Visiblement-x.y.z-x64.msi` installe l'app pour votre compte, sans droits administrateur. Il ajoute un raccourci au menu Démarrer et « Ouvrir avec Visiblement » sur les vidéos, les images et l'audio. Une nouvelle version s'installe par-dessus l'ancienne.
+- `Visiblement-windows-x64.zip` contient la version portable. Dézippez le dossier où vous voulez et lancez `visiblement.exe`.
 
-Au lancement, Visiblement vérifie s'il existe une nouvelle version et le propose (avec une case « Ne plus demander »). Le petit bouton en bas à droite de l'écran d'accueil permet de vérifier à tout moment.
+Windows 10 et 11 embarquent WebView2, qui affiche l'interface. Vous n'avez rien d'autre à installer.
+
+Au lancement, Visiblement interroge GitHub et vous propose la nouvelle version quand elle existe. Si vous cochez « Ne plus demander », le petit bouton en bas à droite de l'écran d'accueil vous permet encore de vérifier.
 
 ## Raccourcis
 
 | Touche | Action |
 |---|---|
-| Espace | Lecture / pause |
-| ← / → | -5 s / +5 s |
+| Espace ou clic sur l'image | Lecture / pause |
+| ← / → | Reculer / avancer de 5 s |
 | , / . | Image précédente / suivante |
-| Page préc. / Page suiv. | Vidéo précédente / suivante du dossier |
+| Page préc. / Page suiv. | Fichier précédent / suivant du dossier |
 | ↑ / ↓ ou molette | Volume |
 | M | Muet |
-| Clic sur l'image | Lecture / pause |
 | F ou double-clic | Plein écran (Échap pour sortir) |
 | S | Sous-titres |
-| L | Lire en boucle |
-| T | Damier de transparence (vidéos alpha) |
+| L | Lecture en boucle |
+| T | Damier de transparence |
 | B / N | Début / fin de l'extrait |
 | Maj en glissant sur la barre | Aimanter aux marqueurs |
 | Ctrl+E | Enregistrer l'extrait sous… |
@@ -50,7 +57,7 @@ Au lancement, Visiblement vérifie s'il existe une nouvelle version et le propos
 
 ## Dépannage
 
-Pour obtenir un journal détaillé de lecture :
+Si un fichier ne se lit pas comme prévu, lancez Visiblement avec un journal de lecture et joignez-le à votre signalement :
 
 ```powershell
 $env:VISIBLEMENT_LOG = "$env:TEMP\visiblement.log"; .\visiblement.exe video.mov
@@ -62,24 +69,26 @@ $env:VISIBLEMENT_LOG = "$env:TEMP\visiblement.log"; .\visiblement.exe video.mov
 cargo build --release
 ```
 
-À côté de `target\release\visiblement.exe`, copier :
+Copiez ensuite deux éléments à côté de `target\release\visiblement.exe` :
 
-- `libmpv-2.dll`, tirée de l'archive `mpv-dev-x86_64-*.7z` des [builds shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake/releases) (chargée à l'exécution, aucune bibliothèque n'est nécessaire pour compiler) ;
-- le dossier `ui` de ce dépôt : l'interface (HTML/CSS/JS), modifiable sans recompiler.
+- `libmpv-2.dll`, tirée de l'archive `mpv-dev-x86_64-*.7z` des [builds shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake/releases). Visiblement charge cette DLL au lancement, la compilation n'en a pas besoin.
+- le dossier `ui` du dépôt. Il contient l'interface en HTML, CSS et JavaScript, que vous pouvez modifier sans recompiler.
 
-mpv dessine la vidéo dans une fenêtre ; l'interface est une page web affichée par WebView2 dans une fenêtre transparente posée dessus, qui pilote mpv (voir `src/app.rs`).
+mpv dessine l'image dans une première fenêtre. Une seconde fenêtre, transparente, se pose dessus et affiche l'interface avec WebView2. `src/app.rs` relie les deux : il transmet l'état de mpv à la page et les commandes de la page à mpv.
 
 ## Fabriquer l'installeur
 
-Avec [WiX Toolset 5](https://wixtoolset.org) (`dotnet tool install --global wix --version 5.0.2`) :
+Installez [WiX Toolset 5](https://wixtoolset.org) avec `dotnet tool install --global wix --version 5.0.2`, puis :
 
 ```powershell
-wix build installer\visiblement.wxs -arch x64 -d Version=0.1.0 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-0.1.0-x64.msi
+wix build installer\visiblement.wxs -arch x64 -d Version=0.1.1 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-0.1.1-x64.msi
 ```
+
+Remplacez `0.1.1` par la version inscrite dans `Cargo.toml`.
 
 ## Crédits et licences
 
 - Code de Visiblement : MIT.
-- [mpv / libmpv](https://mpv.io) : GPLv2+ (`libmpv-2.dll`, distribuée dans les releases).
-- [wry / tao](https://github.com/tauri-apps) (MIT / Apache-2.0) pour la fenêtre et la WebView.
+- [mpv / libmpv](https://mpv.io) : GPLv2+. Les releases distribuent `libmpv-2.dll`.
+- [wry et tao](https://github.com/tauri-apps) (MIT / Apache-2.0) gèrent la fenêtre et la WebView.
 - Icônes [Lucide](https://lucide.dev) (ISC).
