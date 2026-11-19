@@ -50,6 +50,7 @@ const OPTIONS: &[(&str, &str)] = &[
     ("input-vo-keyboard", "yes"),
     ("osc", "no"),           // uosc (portable_config/scripts) replaces the stock controls
     ("osd-bar", "no"),
+    ("cursor-autohide", "3000"), // uosc autohide=yes: controls hide with the cursor after 3 s still
     ("border", "no"),        // uosc draws its own title bar
     ("background", "color"),  // transparent videos: plain background; the alpha button switches to a checkerboard
     ("background-color", "#1b1a1e"), // starts on the idle screen (BG_LOGO)
@@ -136,6 +137,30 @@ impl Mpv {
     }
     fn toast(&self, msg: &str) {
         self.cmd(&["show-text", msg, "1500"]);
+    }
+}
+
+/// Top bar text: "name · 0:08 / 0:20 · frame 206 / 500" (uosc shows user-data/visiblement/title).
+fn update_title(m: &Mpv, last: &mut String) {
+    let name = m.get("filename").unwrap_or_default();
+    let (t, d) = (m.num("time-pos"), m.num("duration"));
+    let mut title = format!("{name}   ·   {} / {}", short_clock(t), short_clock(d));
+    if let (Some(f), Some(n)) = (m.get("estimated-frame-number"), m.get("estimated-frame-count")) {
+        title.push_str(&format!("   ·   frame {f} / {n}"));
+    }
+    if title != *last {
+        m.set("user-data/visiblement/title", &title);
+        *last = title;
+    }
+}
+
+/// 8 -> "0:08", 754 -> "12:34", 3725 -> "1:02:05".
+fn short_clock(secs: f64) -> String {
+    let s = secs.max(0.0) as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
     }
 }
 
@@ -592,7 +617,7 @@ fn run() -> Result<(), String> {
     // Before each file opens: turn WAV markers (cue points, After Effects XMP) into chapters.
     unsafe { (m.hook_add)(h, 0, c"on_load".as_ptr(), 0) };
     let mut idle = Idle::new(&config);
-    for p in ["idle-active", "osd-width", "osd-height", "mouse-pos", "video-params", "current-tracks/video", "current-tracks/audio"] {
+    for p in ["idle-active", "osd-width", "osd-height", "mouse-pos", "video-params", "current-tracks/video", "current-tracks/audio", "time-pos", "estimated-frame-number"] {
         m.observe(p);
     }
 
@@ -605,6 +630,7 @@ fn run() -> Result<(), String> {
     let mut workers = Vec::new();
     let mut icon_set = false;
     let mut loader = Loader { since: None, shown: false };
+    let mut last_title = String::new();
     loop {
         // While the logo is on screen, wake up at ~60 Hz to animate the eyes.
         let timeout = if idle.shown || loader.active() { 0.016 } else { -1.0 };
@@ -628,7 +654,9 @@ fn run() -> Result<(), String> {
             EVENT_PROPERTY_CHANGE => {
                 // SAFETY: data points to an mpv_event_property whose first field is the name.
                 let name = unsafe { CStr::from_ptr(*(ev.data as *const *const c_char)) };
-                if name.to_bytes() == b"video-params" {
+                if name.to_bytes() == b"time-pos" || name.to_bytes() == b"estimated-frame-number" {
+                    update_title(&m, &mut last_title);
+                } else if name.to_bytes() == b"video-params" {
                     // Shows the checkerboard button in the bar (portable_config/script-opts/uosc.conf).
                     m.set_flag("user-data/visiblement/alpha", has_alpha(&m));
                     idle.layout(&m);
@@ -803,6 +831,13 @@ mod tests {
         assert!(info.contains("prores") && info.contains("yuva444p"), "{info}");
         let secs: f64 = info.lines().last().unwrap().trim().parse().unwrap();
         assert!((secs - 2.0).abs() < 0.1, "{secs}");
+    }
+
+    #[test]
+    fn short_clock_like_youtube() {
+        assert_eq!(short_clock(8.4), "0:08");
+        assert_eq!(short_clock(754.0), "12:34");
+        assert_eq!(short_clock(3725.0), "1:02:05");
     }
 
     #[test]

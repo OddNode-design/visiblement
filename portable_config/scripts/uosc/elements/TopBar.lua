@@ -277,6 +277,13 @@ function TopBar:render()
 		local left_aligned = options.top_bar_controls == 'left'
 		local title_ax, title_bx, title_ay = ax + margin, bx - margin, self.ay + margin
 
+		-- Visiblement: the cloud logo leads the bar
+		local logo_size = round(self.size * 0.5)
+		ass:icon(title_ax + padding + logo_size / 2, self.ay + self.size / 2, logo_size, 'cloud', {
+			color = bgt, opacity = visibility, border = options.text_border * state.scale, border_color = bg,
+		})
+		title_ax = title_ax + padding * 2 + logo_size
+
 		-- Playlist position
 		if state.has_playlist then
 			local text = state.playlist_pos .. '' .. state.playlist_count
