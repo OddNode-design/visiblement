@@ -65,27 +65,23 @@
   .mascot-screen { position: absolute; inset: 0; display: none; place-items: center; }
   .stage.idle .mascot-screen, .stage.audio .mascot-screen { display: grid; }
   .mascot { width: min(50vmin, 320px); position: relative; z-index: 1; }
-  /* Audio playing: a fluid gradient of the logo colours behind the cloud. Five soft blobs drift on
-     their own orbits and blend into each other, inside a round, feathered area; paused, it fades out. */
-  .aura { position: absolute; left: 50%; top: 50%; width: min(68vmin, 440px); aspect-ratio: 1; translate: -50% -50%;
-    display: none; pointer-events: none; opacity: 0; filter: blur(26px);
-    -webkit-mask: radial-gradient(closest-side, #000 55%, transparent); mask: radial-gradient(closest-side, #000 55%, transparent);
-    transition: opacity .8s var(--ease-out); }
-  .stage.audio .aura { display: block; }
-  .stage.audio.playing .aura { opacity: .7; }
-  .aura i { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%; mix-blend-mode: screen;
-    animation: var(--path) var(--t) ease-in-out infinite alternate; animation-play-state: paused; }
-  .stage.audio.playing .aura i { animation-play-state: running; }
-  .aura i:nth-child(1) { background: radial-gradient(closest-side, #ecc6dc, transparent); left: 0; top: 4%; --path: blob-a; --t: 5.3s; }
-  .aura i:nth-child(2) { background: radial-gradient(closest-side, #eed9cc, transparent); right: 0; top: 0; --path: blob-b; --t: 6.1s; }
-  .aura i:nth-child(3) { background: radial-gradient(closest-side, #d3e6dc, transparent); left: 14%; bottom: 0; --path: blob-c; --t: 4.7s; }
-  .aura i:nth-child(4) { background: radial-gradient(closest-side, #cbdcec, transparent); right: 4%; bottom: 6%; --path: blob-d; --t: 5.9s; }
-  .aura i:nth-child(5) { background: radial-gradient(closest-side, #d8cfee, transparent); left: 19%; top: 19%; --path: blob-e; --t: 3.9s; }
-  @keyframes blob-a { 33% { translate: 28% 16% ; scale: 1.15; } 66% { translate: 8% 40%; scale: .85; } to { translate: 36% -6%; } }
-  @keyframes blob-b { 30% { translate: -30% 22%; scale: .9; } 70% { translate: -12% 46%; scale: 1.2; } to { translate: -40% 4%; } }
-  @keyframes blob-c { 40% { translate: 30% -30%; scale: 1.2; } 75% { translate: 46% -6%; scale: .9; } to { translate: 6% -44%; } }
-  @keyframes blob-d { 35% { translate: -34% -24%; scale: .85; } 65% { translate: -8% -42%; scale: 1.15; } to { translate: -44% -8%; } }
-  @keyframes blob-e { 25% { translate: 22% -18%; scale: 1.25; } 60% { translate: -20% 14%; scale: .8; } to { translate: 14% 24%; scale: 1.1; } }
+  /* Audio: quiet white ambience around the cloud. Faint rings breathe and specks of dust drift
+     very slowly; while paused everything holds still and fades back. */
+  .ambience { position: absolute; inset: 0; display: none; pointer-events: none; opacity: .35; transition: opacity 1.2s var(--ease-out); }
+  .stage.audio .ambience { display: block; }
+  .stage.audio.playing .ambience { opacity: 1; }
+  .ambience .ring { position: absolute; left: 50%; top: 50%; aspect-ratio: 1; translate: -50% -50%; border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, .07); animation: ring-breathe 9s ease-in-out infinite; animation-play-state: paused; }
+  .ambience .ring:nth-child(1) { width: min(62vmin, 400px); }
+  .ambience .ring:nth-child(2) { width: min(78vmin, 500px); animation-delay: -3s; border-color: rgba(255, 255, 255, .05); }
+  .ambience .ring:nth-child(3) { width: min(96vmin, 620px); animation-delay: -6s; border-color: rgba(255, 255, 255, .035); }
+  .ambience .glow { position: absolute; left: 50%; top: 50%; width: min(70vmin, 460px); aspect-ratio: 1; translate: -50% -50%;
+    border-radius: 50%; background: radial-gradient(closest-side, rgba(255, 255, 255, .06), transparent); }
+  .ambience .dust { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #fff;
+    animation: dust-drift var(--d) ease-in-out infinite alternate; animation-play-state: paused; }
+  .stage.audio.playing .ambience .ring, .stage.audio.playing .ambience .dust { animation-play-state: running; }
+  @keyframes ring-breathe { 50% { scale: 1.035; opacity: .6; } }
+  @keyframes dust-drift { to { translate: var(--dx) var(--dy); } }
   .hint { position: absolute; bottom: 14%; width: 100%; text-align: center; color: var(--muted); display: none; }
   .stage.idle .hint { display: block; }
   /* Discreet version / update button, bottom-right of the idle screen */
@@ -256,13 +252,10 @@
 
   <div class="stage idle" id="stage">
     <div class="mascot-screen">
-      <div class="aura"><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="ambience" id="ambience"><div class="ring"></div><div class="ring"></div><div class="ring"></div><div class="glow"></div></div>
       <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement">
         <image href="cloud.svg" width="512" height="512"/>
-        <g fill="#121114" id="eyes">
-          <ellipse class="eye" cx="226" cy="256" rx="21" ry="34"/>
-          <ellipse class="eye" cx="286" cy="256" rx="21" ry="34"/>
-        </g>
+        <g fill="#121114" id="eyes"></g>
       </svg>
       <div class="hint">Glisse une vidéo ici · clic droit pour le menu</div>
       <button class="upd" id="updBtn"><span class="dot"></span><span id="updText">Rechercher une mise à jour</span></button>
@@ -452,8 +445,15 @@ function renderMarks(d) {
 
 // --- Mascot eyes: a spring chases the gaze target (slight overshoot = alive), wide range off-centre,
 // random glances when the mouse rests, blinks now and then.
-const eyeEls = [...document.querySelectorAll(".eye")];
-const EYE_C = { x: 256, y: 256 }, RANGE = 44;
+// While audio plays, the two eyes melt into a 7-bar waveform (and back on pause): every bar's
+// position, size and roundness eases toward its target each frame, so the morph stays fluid.
+const EYE_C = { x: 256, y: 256 }, RANGE = 44, BARS = 7, EYE_BARS = { 2: 226, 4: 286 };
+const SVGNS = "http://www.w3.org/2000/svg";
+const bars = Array.from({ length: BARS }, (_, i) => {
+  const el = $("eyes").appendChild(document.createElementNS(SVGNS, "rect"));
+  const eye = EYE_BARS[i];
+  return { el, x: eye ?? 256, y: 256, w: eye ? 42 : 0, h: eye ? 68 : 0, r: 21, o: eye ? 1 : 0 };
+});
 let gaze = { ...EYE_C }, epos = { x: 0, y: 0 }, evel = { x: 0, y: 0 };
 let lastMove = 0, nextGlance = 0, blinkUntil = 0, nextBlink = performance.now() + 2500;
 addEventListener("mousemove", ev => {
@@ -463,8 +463,16 @@ addEventListener("mousemove", ev => {
   gaze = { x: (ev.clientX - r.left) * s, y: (ev.clientY - r.top) * s };
   lastMove = performance.now();
 });
+// Organic bar heights: a few slow sines per bar, never in sync.
+const waveHeight = (i, t) => {
+  const s = t / 1000;
+  const v = Math.sin(s * 3.1 + i * 1.7) * 0.5 + Math.sin(s * 5.3 + i * 0.9) * 0.3 + Math.sin(s * 1.3 + i * 2.3) * 0.2;
+  const envelope = 1 - Math.abs(i - (BARS - 1) / 2) / BARS; // taller in the middle
+  return 18 + (v * 0.5 + 0.5) * 70 * envelope;
+};
 (function eyeLoop(t) {
   if (stage.classList.contains("idle") || stage.classList.contains("audio")) {
+    const wave = stage.classList.contains("audio") && stage.classList.contains("playing");
     if (t - lastMove > 2500 && t > nextGlance) {
       const a = Math.random() * Math.PI * 2, d = 120 + Math.random() * 400;
       gaze = Math.random() < 0.25 ? { ...EYE_C } : { x: EYE_C.x + Math.cos(a) * d, y: EYE_C.y + Math.sin(a) * d * 0.7 };
@@ -475,12 +483,37 @@ addEventListener("mousemove", ev => {
     evel.y = (evel.y + (dy * k - epos.y) * 0.14) * 0.74;
     epos.x += evel.x; epos.y += evel.y;
     if (t > nextBlink) { blinkUntil = t + 140; nextBlink = t + 2200 + Math.random() * 3800; }
-    const ry = t < blinkUntil ? 4 : 34;
-    for (const el of eyeEls) el.setAttribute("ry", ry);
-    $("eyes").setAttribute("transform", `translate(${epos.x.toFixed(2)} ${epos.y.toFixed(2)})`);
+    const blink = t < blinkUntil;
+    bars.forEach((b, i) => {
+      const eye = EYE_BARS[i];
+      const target = wave
+        ? { x: 256 + (i - (BARS - 1) / 2) * 22, y: 256, w: 12, h: waveHeight(i, t), r: 6, o: 1 }
+        : eye
+          ? { x: eye + epos.x, y: 256 + epos.y, w: 42, h: blink ? 8 : 68, r: 21, o: 1 }
+          : { x: 256 + epos.x, y: 256 + epos.y, w: 0, h: 0, r: 6, o: 0 };
+      const ease = wave ? 0.18 : 0.12;
+      for (const key of ["x", "y", "w", "h", "r", "o"]) b[key] += (target[key] - b[key]) * (key === "h" && blink && !wave ? 0.5 : ease);
+      const r = Math.min(b.r, b.w / 2, b.h / 2);
+      b.el.setAttribute("x", (b.x - b.w / 2).toFixed(2)); b.el.setAttribute("y", (b.y - b.h / 2).toFixed(2));
+      b.el.setAttribute("width", Math.max(0, b.w).toFixed(2)); b.el.setAttribute("height", Math.max(0, b.h).toFixed(2));
+      b.el.setAttribute("rx", Math.max(0, r).toFixed(2)); b.el.setAttribute("opacity", b.o.toFixed(3));
+    });
   }
   requestAnimationFrame(eyeLoop);
 })(0);
+
+// Dust for the audio ambience: a few white specks, each drifting very slowly on its own path.
+for (let i = 0; i < 26; i++) {
+  const d = $("ambience").appendChild(document.createElement("i"));
+  d.className = "dust";
+  d.style.left = (Math.random() * 100).toFixed(1) + "%";
+  d.style.top = (Math.random() * 100).toFixed(1) + "%";
+  d.style.opacity = (0.12 + Math.random() * 0.35).toFixed(2);
+  d.style.setProperty("--d", (40 + Math.random() * 50).toFixed(0) + "s");
+  d.style.setProperty("--dx", ((Math.random() - 0.5) * 120).toFixed(0) + "px");
+  d.style.setProperty("--dy", ((Math.random() - 0.5) * 120).toFixed(0) + "px");
+  d.style.animationDelay = (-Math.random() * 60).toFixed(0) + "s";
+}
 
 // --- Matrix dot loader (same formula as transitions.dev's demo, recreated)
 const dots = Array.from({ length: 25 }, () => $("loader").appendChild(document.createElement("i")));
