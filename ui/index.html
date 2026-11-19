@@ -644,16 +644,36 @@ document.querySelectorAll(".bar [data-tip]").forEach(btn => {
 });
 
 // --- Window: dedicated title bar drags the window, buttons, resize grips
+// Move / resize: the page keeps the pointer and sends screen positions (physical px) to Rust.
+let grabbing = null, grabRaf = 0, grabXY = null;
+const screenXY = ev => ({ x: ev.screenX * devicePixelRatio, y: ev.screenY * devicePixelRatio });
+function startGrab(ev, dir) {
+  ev.currentTarget.setPointerCapture(ev.pointerId);
+  grabbing = ev.currentTarget;
+  send({ t: "win", a: "grab", dir, ...screenXY(ev) });
+}
+function moveGrab(ev) {
+  if (!grabbing) return;
+  grabXY = screenXY(ev);
+  if (!grabRaf) grabRaf = requestAnimationFrame(() => { grabRaf = 0; send({ t: "win", a: "grab-move", ...grabXY }); });
+}
+function endGrab() { if (grabbing) { grabbing = null; send({ t: "win", a: "grab-end" }); } }
 $("titlebar").addEventListener("pointerdown", ev => {
-  if (ev.button === 0 && !ev.target.closest(".wbtn") && ev.detail === 1) send({ t: "win", a: "drag" });
+  if (ev.button === 0 && !ev.target.closest(".wbtn") && ev.detail === 1) startGrab(ev, "");
 });
+$("titlebar").addEventListener("pointermove", moveGrab);
+$("titlebar").addEventListener("pointerup", endGrab);
+$("titlebar").addEventListener("lostpointercapture", endGrab);
 $("titlebar").addEventListener("dblclick", ev => { if (!ev.target.closest(".wbtn")) send({ t: "win", a: "max" }); });
 $("wMin").onclick = () => send({ t: "win", a: "min" });
 $("wMax").onclick = () => send({ t: "win", a: "max" });
 $("wClose").onclick = () => send({ t: "win", a: "close" });
-document.querySelectorAll(".grip").forEach(g => g.addEventListener("pointerdown", ev => {
-  if (ev.button === 0) send({ t: "win", a: "resize", dir: g.dataset.dir });
-}));
+document.querySelectorAll(".grip").forEach(g => {
+  g.addEventListener("pointerdown", ev => { if (ev.button === 0) startGrab(ev, g.dataset.dir); });
+  g.addEventListener("pointermove", moveGrab);
+  g.addEventListener("pointerup", endGrab);
+  g.addEventListener("lostpointercapture", endGrab);
+});
 
 // --- Keyboard
 addEventListener("keydown", ev => {

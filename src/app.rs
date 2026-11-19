@@ -21,7 +21,7 @@ use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::platform::windows::{IconExtWindows, WindowBuilderExtWindows, WindowExtWindows};
-use tao::window::{Fullscreen, Icon, ResizeDirection, Window, WindowBuilder};
+use tao::window::{Fullscreen, Icon, Window, WindowBuilder};
 use wry::http::{header::CONTENT_TYPE, Request, Response, StatusCode};
 use wry::{DragDropEvent, WebView, WebViewBuilder};
 
@@ -165,18 +165,41 @@ fn eval(webview: &WebView, js: &str) {
     let _ = webview.evaluate_script(js);
 }
 
-fn resize_direction(dir: &str) -> Option<ResizeDirection> {
-    Some(match dir {
-        "n" => ResizeDirection::North,
-        "s" => ResizeDirection::South,
-        "e" => ResizeDirection::East,
-        "w" => ResizeDirection::West,
-        "ne" => ResizeDirection::NorthEast,
-        "nw" => ResizeDirection::NorthWest,
-        "se" => ResizeDirection::SouthEast,
-        "sw" => ResizeDirection::SouthWest,
-        _ => return None,
-    })
+/// A window move (empty `dir`) or resize from an edge ("n", "se"…), started at `cursor` (screen px).
+struct Grab {
+    dir: String,
+    cursor: (f64, f64),
+    pos: PhysicalPosition<i32>,
+    size: PhysicalSize<u32>,
+}
+
+impl Grab {
+    /// New outer position and size for the cursor at (x, y), never smaller than `min`.
+    fn apply(&self, x: f64, y: f64, min: (f64, f64)) -> (f64, f64, f64, f64) {
+        let (dx, dy) = (x - self.cursor.0, y - self.cursor.1);
+        let (mut px, mut py) = (self.pos.x as f64, self.pos.y as f64);
+        let (mut w, mut h) = (self.size.width as f64, self.size.height as f64);
+        if self.dir.is_empty() {
+            return (px + dx, py + dy, w, h);
+        }
+        if self.dir.contains('e') {
+            w = (w + dx).max(min.0);
+        }
+        if self.dir.contains('s') {
+            h = (h + dy).max(min.1);
+        }
+        if self.dir.contains('w') {
+            let nw = (w - dx).max(min.0);
+            px += w - nw;
+            w = nw;
+        }
+        if self.dir.contains('n') {
+            let nh = (h - dy).max(min.1);
+            py += h - nh;
+            h = nh;
+        }
+        (px.round(), py.round(), w.round(), h.round())
+    }
 }
 
 /// Loads dropped or chosen files: the first replaces the playlist (its folder becomes the playlist).
@@ -285,6 +308,7 @@ pub fn run() -> Result<(), String> {
     let mut flush_at: Option<Instant> = None;
     let mut events = Some(events);
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
+    let mut grab: Option<Grab> = None;
 
     event_loop.run(move |event, _, flow| {
         *flow = flush_at.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
@@ -339,14 +363,26 @@ pub fn run() -> Result<(), String> {
                         }
                         "set" => m.set(&s("k"), &s("v")),
                         "win" => match s("a").as_str() {
-                            "drag" => {
-                                let _ = ui.drag_window();
-                            }
-                            "resize" => {
-                                if let Some(d) = resize_direction(&s("dir")) {
-                                    let _ = ui.drag_resize_window(d);
+                            // Moving / resizing is driven by the page (pointer capture + screen coordinates):
+                            // Windows' own drag loop can't start while WebView2 holds the mouse capture.
+                            "grab" => {
+                                if let (Ok(pos), Some(x), Some(y)) = (ui.outer_position(), msg["x"].as_f64(), msg["y"].as_f64()) {
+                                    grab = Some(Grab { dir: s("dir"), cursor: (x, y), pos, size: ui.outer_size() });
                                 }
                             }
+                            "grab-move" => {
+                                if let (Some(g), Some(x), Some(y)) = (&grab, msg["x"].as_f64(), msg["y"].as_f64()) {
+                                    let min = (480.0 * ui.scale_factor(), (300.0 + TITLE_BAR) * ui.scale_factor());
+                                    let (px, py, w, h) = g.apply(x, y, min);
+                                    if g.dir.is_empty() {
+                                        ui.set_outer_position(PhysicalPosition::new(px, py));
+                                    } else {
+                                        ui.set_outer_position(PhysicalPosition::new(px, py));
+                                        ui.set_inner_size(PhysicalSize::new(w, h));
+                                    }
+                                }
+                            }
+                            "grab-end" => grab = None,
                             "min" => video.set_minimized(true),
                             "max" => ui.set_maximized(!ui.is_maximized()),
                             "fs" => {
@@ -422,4 +458,30 @@ pub fn run() -> Result<(), String> {
         }
         workers.retain(|w| !w.is_finished());
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn grab(dir: &str) -> Grab {
+        Grab { dir: dir.into(), cursor: (100.0, 100.0), pos: PhysicalPosition::new(10, 20), size: PhysicalSize::new(800, 600) }
+    }
+
+    #[test]
+    fn move_follows_the_cursor() {
+        assert_eq!(grab("").apply(130.0, 90.0, (480.0, 340.0)), (40.0, 10.0, 800.0, 600.0));
+    }
+
+    #[test]
+    fn resize_from_the_top_left_keeps_the_bottom_right_corner() {
+        assert_eq!(grab("nw").apply(150.0, 130.0, (480.0, 340.0)), (60.0, 50.0, 750.0, 570.0));
+        // clamped at the minimum size: the opposite edge does not move
+        assert_eq!(grab("nw").apply(900.0, 900.0, (480.0, 340.0)), (330.0, 280.0, 480.0, 340.0));
+    }
+
+    #[test]
+    fn resize_from_the_bottom_right() {
+        assert_eq!(grab("se").apply(120.0, 80.0, (480.0, 340.0)), (10.0, 20.0, 820.0, 580.0));
+    }
 }
