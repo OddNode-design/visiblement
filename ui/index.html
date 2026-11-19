@@ -117,6 +117,10 @@
   .vol:hover .slider, .vol.active .slider { width: 104px; }
   /* The 12px knob is centred on the value: margins keep it clear of the icon and the clip edge */
   .vol .rail { position: relative; width: 80px; height: 3px; margin: 0 14px 0 10px; flex: none; border-radius: 2px; background: var(--line); cursor: pointer; }
+  /* Invisible hit area much taller than the 3px line: easy to grab and drag */
+  .vol .rail::before { content: ""; position: absolute; inset: -16px -8px; }
+  .vol .rail { transition: height .15s; }
+  .vol .rail:hover, .vol .rail.dragging { height: 5px; }
   .vol .rail .level { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--fg); }
   .vol .rail .knob { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--fg); }
 
@@ -504,8 +508,11 @@ const flashVol = () => { $("vol").classList.add("active"); clearTimeout(volTimer
 $("mute").onclick = () => cmd("cycle", "mute");
 $("vol").addEventListener("wheel", ev => { ev.preventDefault(); setVolume((volTarget ?? num("volume") / 100) - Math.sign(ev.deltaY) * 0.05); }, { passive: false });
 function railSet(ev) { const r = $("rail").getBoundingClientRect(); setVolume((ev.clientX - r.left) / r.width); }
-$("rail").addEventListener("pointerdown", ev => { $("rail").setPointerCapture(ev.pointerId); railSet(ev); $("rail").onpointermove = railSet; });
-$("rail").addEventListener("pointerup", () => $("rail").onpointermove = null);
+$("rail").addEventListener("pointerdown", ev => {
+  $("rail").setPointerCapture(ev.pointerId); $("rail").classList.add("dragging");
+  railSet(ev); $("rail").onpointermove = railSet;
+});
+$("rail").addEventListener("pointerup", () => { $("rail").onpointermove = null; $("rail").classList.remove("dragging"); });
 
 // --- Alpha: checkerboard behind transparent videos (mpv draws it)
 $("alphaBtn").onclick = () => {
