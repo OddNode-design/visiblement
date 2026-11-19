@@ -1,0 +1,582 @@
+// No console window in release builds; errors go to a message box.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use libloading::Library;
+use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant, SystemTime};
+use std::{ptr, thread};
+
+const APP: &str = "Visiblement";
+
+type Handle = *mut c_void;
+
+const EVENT_NONE: c_int = 0;
+const EVENT_SHUTDOWN: c_int = 1;
+const EVENT_START_FILE: c_int = 6;
+const EVENT_CLIENT_MESSAGE: c_int = 16;
+const EVENT_PROPERTY_CHANGE: c_int = 22;
+
+// Idle-screen logo without its eyes, raw premultiplied BGRA (from assets/body.svg).
+const LOGO_FILE: &str = "visiblement-logo.bgra";
+const LOGO_PX: i64 = 320;
+// One eye, raw premultiplied BGRA, scaled and squashed (blink) by mpv.
+const EYE_FILE: &str = "visiblement-eye.bgra";
+const EYE_PX: (i64, i64) = (64, 104);
+// Eyes in the 512-unit logo space (assets/icon.svg): centers, radii.
+const EYES: [(f64, f64); 2] = [(226.0, 256.0), (286.0, 256.0)];
+const EYE_RX: f64 = 21.0;
+const EYE_RY: f64 = 34.0;
+
+// Tuned for speed: GPU decode (NVDEC/D3D11VA/...) with safe fallback, modern GPU renderer.
+const OPTIONS: &[(&str, &str)] = &[
+    ("vo", "gpu-next"),
+    ("hwdec", "auto-safe"),
+    ("idle", "yes"),         // stay open with an empty window: drop files on it
+    ("force-window", "yes"),
+    ("keep-open", "yes"),    // keep the last frame instead of closing
+    ("image-display-duration", "inf"), // still images (png, static webp) stay on screen
+    ("autocreate-playlist", "filter"), // previous / next = the other media in the same folder
+    ("directory-filter-types", "video,image"),
+    ("input-default-bindings", "yes"),
+    ("input-vo-keyboard", "yes"),
+    ("osc", "no"),           // uosc (portable_config/scripts) replaces the stock controls
+    ("osd-bar", "no"),
+    ("border", "no"),        // uosc draws its own title bar
+    ("background-color", "#111014"),
+    ("screenshot-high-bit-depth", "no"), // 8-bit frames: what the clipboard and most apps expect
+    ("title", "${?filename:${filename} - }Visiblement"),
+];
+
+#[repr(C)]
+struct Event {
+    id: c_int,
+    error: c_int,
+    reply_userdata: u64,
+    data: *mut c_void,
+}
+
+#[repr(C)]
+struct ClientMessage {
+    num_args: c_int,
+    args: *const *const c_char,
+}
+
+#[derive(Clone, Copy)]
+struct Mpv {
+    h: Handle,
+    set_option: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
+    set_property: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
+    get_property: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
+    observe: unsafe extern "C" fn(Handle, u64, *const c_char, c_int) -> c_int,
+    command: unsafe extern "C" fn(Handle, *const *const c_char) -> c_int,
+    free: unsafe extern "C" fn(*mut c_void),
+}
+
+// SAFETY: the libmpv client API is thread-safe, and the handle is only destroyed
+// after every worker thread has been joined.
+unsafe impl Send for Mpv {}
+
+fn cstr(s: &str) -> CString {
+    // Interior NULs cannot come from mpv or the OS; drop them rather than fail.
+    CString::new(s.replace('\0', "")).unwrap_or_default()
+}
+
+impl Mpv {
+    fn option(&self, k: &str, v: &str) {
+        unsafe { (self.set_option)(self.h, cstr(k).as_ptr(), cstr(v).as_ptr()) };
+    }
+    fn set(&self, k: &str, v: &str) {
+        unsafe { (self.set_property)(self.h, cstr(k).as_ptr(), cstr(v).as_ptr()) };
+    }
+    fn get(&self, k: &str) -> Option<String> {
+        unsafe {
+            let p = (self.get_property)(self.h, cstr(k).as_ptr());
+            if p.is_null() {
+                return None;
+            }
+            let s = CStr::from_ptr(p).to_string_lossy().into_owned();
+            (self.free)(p.cast());
+            Some(s)
+        }
+    }
+    fn num(&self, k: &str) -> f64 {
+        self.get(k).and_then(|v| v.parse().ok()).unwrap_or(0.0)
+    }
+    fn observe(&self, k: &str) {
+        unsafe { (self.observe)(self.h, 0, cstr(k).as_ptr(), 0) }; // 0 = MPV_FORMAT_NONE
+    }
+    fn cmd(&self, args: &[&str]) -> bool {
+        let owned: Vec<CString> = args.iter().map(|a| cstr(a)).collect();
+        let mut ptrs: Vec<*const c_char> = owned.iter().map(|a| a.as_ptr()).collect();
+        ptrs.push(ptr::null());
+        unsafe { (self.command)(self.h, ptrs.as_ptr()) >= 0 }
+    }
+    fn toast(&self, msg: &str) {
+        self.cmd(&["show-text", msg, "1500"]);
+    }
+}
+
+// Animated images loop forever, like in a browser.
+fn is_animated_image(path: &str) -> bool {
+    let p = path.to_ascii_lowercase();
+    [".gif", ".webp", ".apng"].iter().any(|e| p.ends_with(e))
+}
+
+/// Idle screen: the logo, centered, with eyes that follow the mouse and blink.
+/// Everything is drawn with overlay-add bitmaps, which mpv renders above the OSD.
+struct Idle {
+    logo: String,
+    eye: String,
+    shown: bool,
+    x: f64,
+    y: f64,
+    scale: f64,
+    blink_until: Instant,
+    next_blink: Instant,
+    last_eyes: Vec<i64>,
+}
+
+impl Idle {
+    fn new(dir: &Path) -> Self {
+        let now = Instant::now();
+        let file = |n: &str| dir.join(n).to_string_lossy().into_owned();
+        Idle {
+            logo: file(LOGO_FILE),
+            eye: file(EYE_FILE),
+            shown: false,
+            x: 0.0,
+            y: 0.0,
+            scale: 1.0,
+            blink_until: now,
+            next_blink: now + Duration::from_secs(2),
+            last_eyes: Vec::new(),
+        }
+    }
+
+    /// Show, move or hide the logo after a window resize or an idle change.
+    fn layout(&mut self, m: &Mpv) {
+        let (w, h) = (m.num("osd-width"), m.num("osd-height"));
+        if m.get("idle-active").as_deref() != Some("yes") || w <= 0.0 || h <= 0.0 {
+            if self.shown {
+                for id in ["0", "1", "2"] {
+                    m.cmd(&["overlay-remove", id]);
+                }
+                m.cmd(&["osd-overlay", "3", "none", ""]);
+                self.shown = false;
+                self.last_eyes.clear();
+            }
+            return;
+        }
+        let d = (w.min(h) * 0.42).min(LOGO_PX as f64).round();
+        self.scale = d / 512.0;
+        (self.x, self.y) = (((w - d) / 2.0).round(), ((h - d) / 2.0).round());
+        let (px, ds) = (LOGO_PX.to_string(), (d as i64).to_string());
+        m.cmd(&[
+            "overlay-add", "0", &(self.x as i64).to_string(), &(self.y as i64).to_string(), &self.logo,
+            "0", "bgra", &px, &px, &(LOGO_PX * 4).to_string(), &ds, &ds,
+        ]);
+        let hint = format!(
+            r"{{\an8\pos({},{})\fs{}\bord0\shad0\1c&HFAF2F4&\alpha&H66&}}Glisse une vidéo ici · clic droit pour le menu",
+            (w / 2.0).round(),
+            (self.y + d + d * 0.12).round(),
+            (d * 0.075).max(14.0).round()
+        );
+        m.cmd(&["osd-overlay", "3", "ass-events", &hint, &w.to_string(), &h.to_string()]);
+        self.shown = true;
+        self.last_eyes.clear();
+        self.draw_eyes(m);
+    }
+
+    /// Move the eye bitmaps if the mouse moved or a blink started / ended.
+    fn draw_eyes(&mut self, m: &Mpv) {
+        if !self.shown {
+            return;
+        }
+        let now = Instant::now();
+        if now >= self.next_blink {
+            self.blink_until = now + Duration::from_millis(130);
+            self.next_blink = now + Duration::from_millis(2500 + jitter_ms(3500));
+        }
+        let ry = if now < self.blink_until { 4.0 } else { EYE_RY };
+        // Mouse in logo space; when it is outside the window, look straight ahead.
+        let (mx, my) = if m.get("mouse-pos/hover").as_deref() == Some("yes") {
+            ((m.num("mouse-pos/x") - self.x) / self.scale, (m.num("mouse-pos/y") - self.y) / self.scale)
+        } else {
+            (256.0, 256.0)
+        };
+        let s = self.scale;
+        let rects: Vec<i64> = EYES
+            .iter()
+            .flat_map(|&(cx, cy)| {
+                let (dx, dy) = eye_offset(mx - cx, my - cy);
+                let (dw, dh) = ((2.0 * EYE_RX * s).max(1.0), (2.0 * ry * s).max(1.0));
+                let (ex, ey) = (self.x + (cx + dx) * s - dw / 2.0, self.y + (cy + dy) * s - dh / 2.0);
+                [ex, ey, dw, dh].map(|v| v.round() as i64)
+            })
+            .collect();
+        if rects == self.last_eyes {
+            return;
+        }
+        let (ew, eh) = (EYE_PX.0.to_string(), EYE_PX.1.to_string());
+        for (i, r) in rects.as_chunks::<4>().0.iter().enumerate() {
+            let [x, y, dw, dh] = r.map(|v| v.to_string());
+            m.cmd(&[
+                "overlay-add", &(i + 1).to_string(), &x, &y, &self.eye,
+                "0", "bgra", &ew, &eh, &(EYE_PX.0 * 4).to_string(), &dw, &dh,
+            ]);
+        }
+        self.last_eyes = rects;
+    }
+}
+
+/// How far an eye looks toward a point (dx, dy) away: up to 26 logo units.
+fn eye_offset(dx: f64, dy: f64) -> (f64, f64) {
+    let d = dx.hypot(dy).max(1.0);
+    let k = (d / 4.0).min(26.0) / d;
+    (dx * k, dy * k)
+}
+
+// shortcut: clock-based jitter, not a real RNG; fine for blink timing.
+fn jitter_ms(max: u64) -> u64 {
+    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos() as u64 % max)
+}
+
+/// Pause on the current frame, ask where to save it, write it at full resolution.
+fn save_frame(m: Mpv) -> thread::JoinHandle<()> {
+    let was_paused = m.get("pause").as_deref() == Some("yes");
+    m.set("pause", "yes");
+    let name = format!(
+        "{}_frame{}.png",
+        m.get("filename/no-ext").unwrap_or_else(|| APP.into()),
+        m.get("estimated-frame-number").unwrap_or_default()
+    );
+    thread::spawn(move || {
+        let target = rfd::FileDialog::new()
+            .set_title("Enregistrer la frame")
+            .set_file_name(&name)
+            .add_filter("PNG", &["png"])
+            .add_filter("JPEG", &["jpg", "jpeg"])
+            .add_filter("WebP", &["webp"])
+            .save_file();
+        if let Some(p) = target {
+            // mpv picks the image format from the extension.
+            let ok = m.cmd(&["screenshot-to-file", &p.to_string_lossy(), "video"]);
+            m.toast(if ok { "Frame enregistrée" } else { "Échec de l'enregistrement" });
+        }
+        if !was_paused {
+            m.set("pause", "no");
+        }
+    })
+}
+
+/// Grab the current frame and put it on the clipboard as an image.
+fn copy_frame(m: Mpv) -> thread::JoinHandle<()> {
+    let tmp = std::env::temp_dir().join(format!("visiblement-frame-{}.png", std::process::id()));
+    let grabbed = m.cmd(&["screenshot-to-file", &tmp.to_string_lossy(), "video"]);
+    thread::spawn(move || {
+        let ok = grabbed && png_to_clipboard(&tmp).is_ok();
+        let _ = std::fs::remove_file(&tmp);
+        m.toast(if ok { "Frame copiée" } else { "Échec de la copie" });
+    })
+}
+
+fn png_to_clipboard(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let file = std::io::BufReader::new(std::fs::File::open(path)?);
+    let mut dec = png::Decoder::new(file);
+    dec.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    let mut reader = dec.read_info()?;
+    let mut buf = vec![0; reader.output_buffer_size().ok_or("image trop grande")?];
+    let info = reader.next_frame(&mut buf)?;
+    let rgba = to_rgba(&buf[..info.buffer_size()], info.color_type).ok_or("format non géré")?;
+    arboard::Clipboard::new()?.set_image(arboard::ImageData {
+        width: info.width as usize,
+        height: info.height as usize,
+        bytes: rgba.into(),
+    })?;
+    Ok(())
+}
+
+fn to_rgba(px: &[u8], color: png::ColorType) -> Option<Vec<u8>> {
+    match color {
+        png::ColorType::Rgba => Some(px.to_vec()),
+        png::ColorType::Rgb => Some(px.as_chunks::<3>().0.iter().flat_map(|&[r, g, b]| [r, g, b, 255]).collect()),
+        _ => None,
+    }
+}
+
+const REPO: &str = "OddNode-design/visiblement";
+
+/// "v1.2.3" -> [1, 2, 3]; anything unparsable counts as 0.
+fn parse_version(v: &str) -> Vec<u32> {
+    v.trim().trim_start_matches('v').split('.').map(|p| p.parse().unwrap_or(0)).collect()
+}
+
+/// Extracts "tag_name" from the GitHub releases API answer without a JSON dependency.
+fn tag_name(json: &str) -> Option<&str> {
+    let rest = &json[json.find("\"tag_name\"")? + 10..];
+    let rest = &rest[rest.find('"')? + 1..];
+    Some(&rest[..rest.find('"')?])
+}
+
+/// Background check at startup: if GitHub has a newer release, offer to open its page.
+fn check_for_update() {
+    use std::os::windows::process::CommandExt;
+    thread::spawn(|| {
+        // curl.exe ships with Windows 10+; CREATE_NO_WINDOW keeps it invisible. Offline = silent.
+        let Ok(out) = std::process::Command::new("curl.exe")
+            .args(["-s", "-m", "5", "-H", "Accept: application/vnd.github+json"])
+            .arg(format!("https://api.github.com/repos/{REPO}/releases/latest"))
+            .creation_flags(0x0800_0000)
+            .output()
+        else {
+            return;
+        };
+        let body = String::from_utf8_lossy(&out.stdout);
+        let Some(tag) = tag_name(&body) else { return };
+        if parse_version(tag) <= parse_version(env!("CARGO_PKG_VERSION")) {
+            return;
+        }
+        let msg = format!(
+            "Une nouvelle version de {APP} est disponible : {tag}\n(version installée : {})\n\nOuvrir la page de téléchargement ?",
+            env!("CARGO_PKG_VERSION")
+        );
+        if win::ask(&msg, APP) {
+            win::open_url(&format!("https://github.com/{REPO}/releases/latest"));
+        }
+    });
+}
+
+fn exe_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .unwrap_or_default()
+}
+
+fn run() -> Result<(), String> {
+    let dir = exe_dir();
+    // SAFETY: loading libmpv runs its DllMain, which has no unusual requirements.
+    let lib = unsafe { Library::new(dir.join("libmpv-2.dll")) }
+        .or_else(|_| unsafe { Library::new("libmpv-2.dll") })
+        .map_err(|e| format!("libmpv-2.dll introuvable à côté de visiblement.exe.\n\n{e}"))?;
+
+    macro_rules! sym {
+        ($name:literal) => {
+            // SAFETY: each target type matches the declaration in mpv/client.h (client API v2).
+            *unsafe { lib.get(concat!($name, "\0").as_bytes()) }
+                .map_err(|e| format!("Fonction {} absente de libmpv : {e}", $name))?
+        };
+    }
+    let create: unsafe extern "C" fn() -> Handle = sym!("mpv_create");
+    let initialize: unsafe extern "C" fn(Handle) -> c_int = sym!("mpv_initialize");
+    let wait_event: unsafe extern "C" fn(Handle, f64) -> *const Event = sym!("mpv_wait_event");
+    let destroy: unsafe extern "C" fn(Handle) = sym!("mpv_terminate_destroy");
+
+    let h = unsafe { create() };
+    if h.is_null() {
+        return Err("Impossible de créer le lecteur mpv.".into());
+    }
+    let m = Mpv {
+        h,
+        set_option: sym!("mpv_set_option_string"),
+        set_property: sym!("mpv_set_property_string"),
+        get_property: sym!("mpv_get_property_string"),
+        observe: sym!("mpv_observe_property"),
+        command: sym!("mpv_command"),
+        free: sym!("mpv_free"),
+    };
+
+    // Skin (uosc), menu (input.conf) and logo ship in portable_config next to the exe.
+    let config = dir.join("portable_config");
+    m.option("config", "yes");
+    m.option("config-dir", &config.to_string_lossy());
+    for (k, v) in OPTIONS {
+        m.option(k, v);
+    }
+    if unsafe { initialize(h) } < 0 {
+        unsafe { destroy(h) };
+        return Err("Impossible d'initialiser mpv.".into());
+    }
+    check_for_update();
+    let mut idle = Idle::new(&config);
+    for p in ["idle-active", "osd-width", "osd-height", "mouse-pos"] {
+        m.observe(p);
+    }
+
+    // Every argument is a file (or URL) to play, in order: also covers drag & drop onto the .exe.
+    for arg in std::env::args_os().skip(1) {
+        m.cmd(&["loadfile", &arg.to_string_lossy(), "append-play"]);
+    }
+
+    let mut workers = Vec::new();
+    let mut icon_set = false;
+    loop {
+        // While the logo is on screen, wake up regularly so it can blink.
+        let timeout = if idle.shown { 0.04 } else { -1.0 };
+        // SAFETY: mpv_wait_event never returns NULL; the event lives until the next call.
+        let ev = unsafe { &*wait_event(h, timeout) };
+        if !icon_set {
+            icon_set = win::set_window_icon();
+        }
+        match ev.id {
+            EVENT_SHUTDOWN => break,
+            EVENT_NONE => idle.draw_eyes(&m),
+            EVENT_START_FILE => {
+                let anim = m.get("path").is_some_and(|p| is_animated_image(&p));
+                m.set("loop-file", if anim { "inf" } else { "no" });
+            }
+            EVENT_PROPERTY_CHANGE => {
+                // SAFETY: data points to an mpv_event_property whose first field is the name.
+                let name = unsafe { CStr::from_ptr(*(ev.data as *const *const c_char)) };
+                if name.to_bytes() == b"mouse-pos" {
+                    idle.draw_eyes(&m);
+                } else {
+                    idle.layout(&m);
+                }
+            }
+            EVENT_CLIENT_MESSAGE => {
+                // SAFETY: data points to an mpv_event_client_message for this event id.
+                let msg = unsafe { &*(ev.data as *const ClientMessage) };
+                if msg.num_args < 1 {
+                    continue;
+                }
+                let name = unsafe { CStr::from_ptr(*msg.args) }.to_string_lossy();
+                match name.as_ref() {
+                    "visiblement-save-frame" => workers.push(save_frame(m)),
+                    "visiblement-copy-frame" => workers.push(copy_frame(m)),
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        workers.retain(|w: &thread::JoinHandle<()>| !w.is_finished());
+    }
+    // A save dialog may still be open: the handle must outlive it.
+    for w in workers {
+        let _ = w.join();
+    }
+    unsafe { destroy(h) };
+    Ok(())
+}
+
+mod win {
+    use std::ffi::c_void;
+    use std::ptr::{null, null_mut};
+
+    type Hwnd = *mut c_void;
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn FindWindowExW(parent: Hwnd, after: Hwnd, class: *const u16, title: *const u16) -> Hwnd;
+        fn GetWindowThreadProcessId(hwnd: Hwnd, pid: *mut u32) -> u32;
+        fn LoadImageW(inst: *mut c_void, name: *const u16, kind: u32, cx: i32, cy: i32, flags: u32) -> *mut c_void;
+        fn SendMessageW(hwnd: Hwnd, msg: u32, w: usize, l: isize) -> isize;
+        fn GetSystemMetrics(index: i32) -> i32;
+        pub fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, flags: u32) -> i32;
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetModuleHandleW(name: *const u16) -> *mut c_void;
+    }
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn ShellExecuteW(hwnd: Hwnd, op: *const u16, file: *const u16, params: *const u16, dir: *const u16, show: i32) -> *mut c_void;
+    }
+
+    /// Yes / No question in front of the player. True on Yes.
+    pub fn ask(text: &str, caption: &str) -> bool {
+        // MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST; IDYES = 6.
+        let flags = 0x4 | 0x40 | 0x1_0000 | 0x4_0000;
+        // SAFETY: NUL-terminated UTF-16 buffers that live for the call.
+        unsafe { MessageBoxW(null_mut(), wide(text).as_ptr(), wide(caption).as_ptr(), flags) == 6 }
+    }
+
+    /// Opens a URL in the default browser.
+    pub fn open_url(url: &str) {
+        // SAFETY: NUL-terminated UTF-16 buffers that live for the call. 1 = SW_SHOWNORMAL.
+        unsafe { ShellExecuteW(null_mut(), wide("open").as_ptr(), wide(url).as_ptr(), null(), null(), 1) };
+    }
+
+    pub fn wide(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain([0]).collect()
+    }
+
+    /// Give the mpv window our icon (resource id 1, embedded by build.rs). False until the window exists.
+    pub fn set_window_icon() -> bool {
+        let class = wide("mpv");
+        // SAFETY: plain Win32 calls with valid NUL-terminated strings; MAKEINTRESOURCE(1) is the pointer value 1.
+        unsafe {
+            let mut hwnd = null_mut();
+            loop {
+                hwnd = FindWindowExW(null_mut(), hwnd, class.as_ptr(), null());
+                if hwnd.is_null() {
+                    return false;
+                }
+                let mut pid = 0;
+                GetWindowThreadProcessId(hwnd, &mut pid);
+                if pid == std::process::id() {
+                    break;
+                }
+            }
+            let inst = GetModuleHandleW(null());
+            // (ICON_BIG, SM_CXICON) and (ICON_SMALL, SM_CXSMICON)
+            for (which, metric) in [(1usize, 11), (0, 49)] {
+                let size = GetSystemMetrics(metric);
+                let icon = LoadImageW(inst, std::ptr::without_provenance(1), 1, size, size, 0); // IMAGE_ICON
+                if !icon.is_null() {
+                    SendMessageW(hwnd, 0x80, which, icon as isize); // WM_SETICON
+                }
+            }
+            true
+        }
+    }
+}
+
+fn alert(msg: &str) {
+    // SAFETY: both buffers are NUL-terminated UTF-16 and live for the call. 0x10 = MB_ICONERROR.
+    unsafe { win::MessageBoxW(ptr::null_mut(), win::wide(msg).as_ptr(), win::wide(APP).as_ptr(), 0x10) };
+}
+
+fn main() {
+    if let Err(e) = run() {
+        alert(&e);
+        std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn animated_detection() {
+        assert!(is_animated_image(r"C:\a\B.GIF"));
+        assert!(is_animated_image("x.webp"));
+        assert!(!is_animated_image("x.mp4"));
+        assert!(!is_animated_image("gif.mov"));
+    }
+
+    #[test]
+    fn rgb_expands_to_opaque_rgba() {
+        assert_eq!(to_rgba(&[1, 2, 3, 4, 5, 6], png::ColorType::Rgb), Some(vec![1, 2, 3, 255, 4, 5, 6, 255]));
+        assert_eq!(to_rgba(&[0], png::ColorType::Grayscale), None);
+    }
+
+    #[test]
+    fn eyes_look_toward_the_mouse_but_stay_in_place() {
+        let (dx, dy) = eye_offset(1000.0, 0.0);
+        assert!((dx - 26.0).abs() < 1e-9 && dy.abs() < 1e-9);
+        let (dx, _) = eye_offset(8.0, 0.0);
+        assert!((dx - 2.0).abs() < 1e-9);
+        assert_eq!(eye_offset(0.0, 0.0), (0.0, 0.0));
+    }
+
+    #[test]
+    fn update_versions_compare_numerically() {
+        assert!(parse_version("v0.10.0") > parse_version("0.9.3"));
+        assert!(parse_version("v0.1.0") <= parse_version("0.1.0"));
+        assert_eq!(tag_name(r#"{"url":"x","tag_name": "v1.2.0","name":"y"}"#), Some("v1.2.0"));
+        assert_eq!(tag_name(r#"{"message":"Not Found"}"#), None);
+    }
+}
