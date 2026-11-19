@@ -65,16 +65,27 @@
   .mascot-screen { position: absolute; inset: 0; display: none; place-items: center; }
   .stage.idle .mascot-screen, .stage.audio .mascot-screen { display: grid; }
   .mascot { width: min(50vmin, 320px); position: relative; z-index: 1; }
-  /* Audio playing: the logo colours drift and breathe behind the cloud; paused, they settle and dim */
-  .aura { position: absolute; left: 50%; top: 50%; width: min(78vmin, 520px); aspect-ratio: 1; translate: -50% -50%;
-    border-radius: 50%; display: none; pointer-events: none; opacity: .18; filter: blur(48px) saturate(1.2);
-    background: conic-gradient(from 0deg, #ff8fc8, #ffd98a, #9df5b4, #7fdcff, #a78bff, #ff8fc8);
-    animation: aura-spin 14s linear infinite, aura-breathe 4.2s ease-in-out infinite;
-    animation-play-state: paused; transition: opacity .8s var(--ease-out); }
+  /* Audio playing: a fluid gradient of the logo colours behind the cloud. Five soft blobs drift on
+     their own orbits and blend into each other, inside a round, feathered area; paused, they freeze and dim. */
+  .aura { position: absolute; left: 50%; top: 50%; width: min(68vmin, 440px); aspect-ratio: 1; translate: -50% -50%;
+    display: none; pointer-events: none; opacity: .2; filter: blur(22px) saturate(1.25);
+    -webkit-mask: radial-gradient(closest-side, #000 55%, transparent); mask: radial-gradient(closest-side, #000 55%, transparent);
+    transition: opacity .8s var(--ease-out); }
   .stage.audio .aura { display: block; }
-  .stage.audio.playing .aura { opacity: .55; animation-play-state: running; }
-  @keyframes aura-spin { to { rotate: 360deg; } }
-  @keyframes aura-breathe { 50% { scale: 1.12; } }
+  .stage.audio.playing .aura { opacity: .8; }
+  .aura i { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%; mix-blend-mode: screen;
+    animation: var(--path) var(--t) ease-in-out infinite alternate; animation-play-state: paused; }
+  .stage.audio.playing .aura i { animation-play-state: running; }
+  .aura i:nth-child(1) { background: radial-gradient(closest-side, #ff8fc8, transparent); left: 0; top: 4%; --path: blob-a; --t: 5.3s; }
+  .aura i:nth-child(2) { background: radial-gradient(closest-side, #ffd98a, transparent); right: 0; top: 0; --path: blob-b; --t: 6.1s; }
+  .aura i:nth-child(3) { background: radial-gradient(closest-side, #9df5b4, transparent); left: 14%; bottom: 0; --path: blob-c; --t: 4.7s; }
+  .aura i:nth-child(4) { background: radial-gradient(closest-side, #7fdcff, transparent); right: 4%; bottom: 6%; --path: blob-d; --t: 5.9s; }
+  .aura i:nth-child(5) { background: radial-gradient(closest-side, #a78bff, transparent); left: 19%; top: 19%; --path: blob-e; --t: 3.9s; }
+  @keyframes blob-a { 33% { translate: 28% 16% ; scale: 1.15; } 66% { translate: 8% 40%; scale: .85; } to { translate: 36% -6%; } }
+  @keyframes blob-b { 30% { translate: -30% 22%; scale: .9; } 70% { translate: -12% 46%; scale: 1.2; } to { translate: -40% 4%; } }
+  @keyframes blob-c { 40% { translate: 30% -30%; scale: 1.2; } 75% { translate: 46% -6%; scale: .9; } to { translate: 6% -44%; } }
+  @keyframes blob-d { 35% { translate: -34% -24%; scale: .85; } 65% { translate: -8% -42%; scale: 1.15; } to { translate: -44% -8%; } }
+  @keyframes blob-e { 25% { translate: 22% -18%; scale: 1.25; } 60% { translate: -20% 14%; scale: .8; } to { translate: 14% 24%; scale: 1.1; } }
   .hint { position: absolute; bottom: 14%; width: 100%; text-align: center; color: var(--muted); display: none; }
   .stage.idle .hint { display: block; }
   /* Discreet version / update button, bottom-right of the idle screen */
@@ -245,7 +256,7 @@
 
   <div class="stage idle" id="stage">
     <div class="mascot-screen">
-      <div class="aura"></div>
+      <div class="aura"><i></i><i></i><i></i><i></i><i></i></div>
       <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement">
         <image href="cloud.svg" width="512" height="512"/>
         <g fill="#121114" id="eyes">
