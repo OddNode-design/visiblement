@@ -19,7 +19,7 @@ Visiblement lit les formats que FFmpeg connaît : mp4, mov, mkv, webm, avi, gif,
 - **Parcourir un dossier.** Précédent et suivant passent aux autres fichiers du dossier de la vidéo ouverte.
 - **Lire les marqueurs d'un WAV.** Les cue points et les marqueurs posés dans After Effects, Premiere ou Audition apparaissent sur la barre de lecture. Au survol, le nom du marqueur remplace le timecode. Maintenez Maj en faisant glisser la tête de lecture pour l'aimanter au marqueur le plus proche.
 - **Couper un extrait.** `B` marque le début, `N` la fin, `Ctrl+E` enregistre l'extrait. Visiblement réencode dans le format d'origine : un WAV 24 bits reste en 24 bits, un ProRes 4444 garde son alpha.
-- **Poser un masque.** Éditer › Importer un masque superpose une image à la vidéo, calée sur l'image, pour vérifier un mapping sur la mire. Un PNG transparent s'affiche tel quel ; un masque noir et blanc cache la vidéo là où il est noir.
+- **Poser un masque.** Éditer › Importer un masque superpose une image à la vidéo, calée sur l'image. Un PNG transparent s'affiche tel quel ; un masque noir et blanc cache la vidéo là où il est noir. `Ctrl+I` inverse le masque.
 - **Sauver une image.** Le clic droit enregistre la frame affichée en PNG, JPG ou WebP, ou la copie dans le presse-papiers pour la coller dans Photoshop.
 
 Pendant la lecture d'un fichier audio, la mascotte remplace ses yeux par une forme d'onde et une sphère blanche ondule derrière elle.
@@ -54,6 +54,7 @@ Au lancement, Visiblement interroge GitHub et vous propose la nouvelle version q
 | Ctrl+E | Enregistrer l'extrait sous… |
 | Alt+X | Effacer la sélection |
 | Ctrl+M | Afficher / cacher le masque |
+| Ctrl+I | Inverser le masque |
 | Ctrl+O | Ouvrir un fichier |
 | Ctrl+S | Enregistrer la frame sous… |
 | Ctrl+C | Copier la frame |

@@ -521,6 +521,7 @@ addEventListener("keydown", ev => {
   else if (c && k.toLowerCase() === "c") actions.copy();
   else if (c && k.toLowerCase() === "e") { ev.preventDefault(); actions.export(); }
   else if (c && k.toLowerCase() === "m") { ev.preventDefault(); actions.toggleMask(); }
+  else if (c && k.toLowerCase() === "i") { ev.preventDefault(); actions.invertMask(); }
   else if (ev.altKey && k.toLowerCase() === "x") clearSel();
   else if (c) return;
   else if (k === "m") cmd("cycle", "mute");
@@ -702,7 +703,7 @@ $("infoBtn").onclick = () => {
 // A PNG with transparency is shown as is. An opaque image (JPG, flat PNG) is read as a black and white
 // mask: black hides the video, white lets it through (luminance turned into transparency).
 const maskCanvas = $("mask");
-let maskLoaded = false, maskShown = false;
+let maskLoaded = false, maskShown = false, maskInverted = false, maskAlpha = null;
 function layoutMask() {
   const od = json("osd-dimensions");
   if (!od || !od.w) return;
@@ -715,6 +716,8 @@ function layoutMask() {
 function syncMaskMenu() {
   $("maskToggle").classList.toggle("disabled", !maskLoaded);
   $("maskRemove").classList.toggle("disabled", !maskLoaded);
+  $("maskInvert").classList.toggle("disabled", !maskLoaded);
+  $("maskInvert").querySelector("b").textContent = maskInverted ? "Rétablir le masque" : "Inverser le masque";
   $("maskToggle").querySelector("b").textContent = maskShown ? "Cacher le masque" : "Afficher le masque";
   maskCanvas.classList.toggle("on", maskLoaded && maskShown);
 }
@@ -733,8 +736,9 @@ vb.mask = (url, name) => {
         const lum = 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2];
         px[i] = px[i + 1] = px[i + 2] = 0; px[i + 3] = 255 - lum;
       }
-      ctx.putImageData(data, 0, 0);
     }
+    maskAlpha = data; maskInverted = false;
+    ctx.putImageData(data, 0, 0);
     maskLoaded = maskShown = true;
     $("maskName").textContent = name;
     syncMaskMenu(); layoutMask();
@@ -745,8 +749,17 @@ vb.mask = (url, name) => {
 };
 Object.assign(actions, {
   importMask: () => send({ t: "import-mask" }),
+  // Invert: every pixel's transparency flips (hidden ↔ visible); colours of a PNG are kept.
+  invertMask: () => {
+    if (!maskLoaded || !maskAlpha) return;
+    const px = maskAlpha.data;
+    for (let i = 3; i < px.length; i += 4) px[i] = 255 - px[i];
+    maskCanvas.getContext("2d").putImageData(maskAlpha, 0, 0);
+    maskInverted = !maskInverted; syncMaskMenu();
+    toast(maskInverted ? "Masque inversé" : "Masque rétabli");
+  },
   toggleMask: () => { if (!maskLoaded) return; maskShown = !maskShown; syncMaskMenu(); toast(maskShown ? "Masque affiché" : "Masque caché"); },
-  removeMask: () => { maskLoaded = maskShown = false; $("maskName").textContent = "Aucun masque"; syncMaskMenu(); toast("Masque retiré"); },
+  removeMask: () => { maskLoaded = maskShown = maskInverted = false; maskAlpha = null; $("maskName").textContent = "Aucun masque"; syncMaskMenu(); toast("Masque retiré"); },
 });
 syncMaskMenu();
 
