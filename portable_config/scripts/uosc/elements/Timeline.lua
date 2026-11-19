@@ -59,10 +59,12 @@ function Timeline:update_dimensions()
 	self.progress_line_width = round(options.progress_line_width * state.scale)
 	self.font_size = math.floor(math.min((self.size + 60 * state.scale) * 0.2, self.size * 0.96) * options.font_scale)
 	local window_border_size = Elements:v('window_border', 'size', 0)
-	self.ax = window_border_size
-	self.ay = display.height - window_border_size - self.size - self.top_border
-	self.bx = display.width - window_border_size
-	self.by = display.height - window_border_size
+	-- Visiblement: keep the timeline off the window edges (16px sides, 10px bottom).
+	local inset_x, inset_y = round(16 * state.scale), round(10 * state.scale)
+	self.ax = window_border_size + inset_x
+	self.ay = display.height - window_border_size - inset_y - self.size - self.top_border
+	self.bx = display.width - window_border_size - inset_x
+	self.by = display.height - window_border_size - inset_y
 	self.width = self.bx - self.ax
 	self.chapter_size = math.max((self.by - self.ay) / 10, 3)
 	self.chapter_size_hover = self.chapter_size * 2
@@ -423,8 +425,8 @@ function Timeline:render()
 		func(ass, x, y, align, timestamp, opts)
 	end
 
-	-- Time values
-	if text_opacity > 0 then
+	-- Time values (Visiblement: not inside a thin bar; time lives in the top bar)
+	if text_opacity > 0 and self.size >= 16 * state.scale then
 		local time_opts = {size = self.font_size, opacity = text_opacity, border = options.text_border * state.scale}
 		-- Upcoming cache time
 		local cache_duration = state.cache_duration and state.cache_duration / state.speed or nil
