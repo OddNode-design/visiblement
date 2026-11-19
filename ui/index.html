@@ -333,7 +333,9 @@ function render() {
   renderMarks(d);
 
   const alpha = st.alpha === "true", tiles = st.background === "tiles";
-  $("alphaBtn").hidden = !alpha;
+  // Always available on pictures; the tooltip says whether this file really has transparency.
+  $("alphaBtn").hidden = audio;
+  $("alphaBtn").dataset.tip = alpha ? "Damier de transparence (T)" : "Damier de transparence (T) · pas d'alpha dans ce fichier";
   $("alphaBtn").classList.toggle("on", tiles);
   swapIcon($("alphaIcon"), tiles ? "grid-2x2-check" : "grid-2x2");
 }
