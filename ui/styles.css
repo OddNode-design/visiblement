@@ -228,8 +228,8 @@
   .modal.installing .never, .modal.installing .actions { display: none; }
   .modal.installing .progress { display: block; }
   .modal .progress .track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; }
-  .modal .progress .bar { height: 100%; width: 0; border-radius: inherit; background: var(--fg); transition: width .25s var(--ease-out); }
-  .modal .progress .bar.busy { width: 100% !important; background: linear-gradient(90deg, rgba(244, 242, 250, .35), var(--fg), rgba(244, 242, 250, .35));
+  .modal .progress .fill { height: 100%; width: 0; border-radius: inherit; background: var(--fg); transition: width .25s var(--ease-out); }
+  .modal .progress .fill.busy { width: 100% !important; background: linear-gradient(90deg, rgba(244, 242, 250, .35), var(--fg), rgba(244, 242, 250, .35));
     background-size: 200% 100%; animation: busy 1.1s linear infinite; }
   @keyframes busy { to { background-position: -200% 0; } }
   .modal .progress .label { margin-top: 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
