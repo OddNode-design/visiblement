@@ -1,0 +1,231 @@
+  :root {
+    --titlebar: 40px; /* must match TITLE_BAR in src/app.rs */
+    --bg: #1b1a1e; --bar: #141317; --fg: #f4f2fa; --muted: rgba(244, 242, 250, .6);
+    --panel: rgba(17, 16, 20, .88); --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
+    /* Logo colours washed out almost to white: a holographic hint, barely visible */
+    --holo: linear-gradient(90deg, #ffe4f2, #fff3dd 25%, #e5fbea 50%, #e2f5ff 75%, #ece6ff);
+    --ease-out: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  /* Transparent page: the video window shows through everywhere below the title bar */
+  html, body { margin: 0; height: 100%; background: transparent; color: var(--fg);
+    font: 14px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; user-select: none; }
+  .window { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+  /* Lucide icons, tinted with currentColor through a mask */
+  .ico { width: 20px; height: 20px; display: block; background: currentColor;
+    -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
+  /* transitions.dev "Icon swap": scale + blur */
+  .ico.swap { animation: icon-swap .22s var(--ease-out); }
+  @keyframes icon-swap { from { transform: scale(.55); filter: blur(4px); opacity: 0; } }
+
+  /* Dedicated title bar: its own strip, the video starts below it */
+  .titlebar { flex: none; height: var(--titlebar); display: flex; align-items: center; gap: 10px;
+    padding: 0 4px 0 12px; background: var(--bar); border-bottom: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 10px 10px 0 0; }
+  .titlebar img { width: 22px; height: 22px; border-radius: 6px; pointer-events: none; }
+  .titlebar .title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; pointer-events: none; }
+  .titlebar .grow { flex: 1; align-self: stretch; }
+  .titlebar .pos { font-size: 12px; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 999px;
+    background: rgba(255, 255, 255, .1); pointer-events: none; }
+  .titlebar .pos:empty { display: none; }
+  .titlebar .wbtn { width: 44px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--fg); opacity: .8; }
+  .titlebar .wbtn:hover { background: var(--hover); opacity: 1; }
+  .titlebar .wbtn.close:hover { background: #c42b1c; }
+  .titlebar .wbtn .ico { width: 16px; height: 16px; }
+  .window.fullscreen .titlebar { display: none; }
+
+  /* Everything below the title bar sits over the video window */
+  .stage { position: relative; flex: 1; overflow: hidden; }
+  .stage.hide-ui { cursor: none; }
+
+  /* Thin edge around the window, like a framed hero image */
+  .edge { position: fixed; inset: 0; border-radius: 10px 10px 0 0; pointer-events: none; z-index: 40;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09); }
+  .window.fullscreen .edge { display: none; }
+  /* Resize handles on the window edges */
+  .grip { position: fixed; z-index: 50; }
+  .grip.n { top: 0; left: 8px; right: 8px; height: 5px; cursor: n-resize; }
+  .grip.s { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: s-resize; }
+  .grip.e { right: 0; top: 8px; bottom: 8px; width: 5px; cursor: e-resize; }
+  .grip.w { left: 0; top: 8px; bottom: 8px; width: 5px; cursor: w-resize; }
+  .grip.ne { top: 0; right: 0; width: 8px; height: 8px; cursor: ne-resize; }
+  .grip.nw { top: 0; left: 0; width: 8px; height: 8px; cursor: nw-resize; }
+  .grip.se { bottom: 0; right: 0; width: 8px; height: 8px; cursor: se-resize; }
+  .grip.sw { bottom: 0; left: 0; width: 8px; height: 8px; cursor: sw-resize; }
+  .window.fullscreen .grip, .window.maximized .grip { display: none; }
+
+  /* Idle screen and audio files: the cloud with living eyes */
+  .mascot-screen { position: absolute; inset: 0; display: none; place-items: center; }
+  .stage.idle .mascot-screen, .stage.audio .mascot-screen { display: grid; }
+  .mascot { width: min(50vmin, 320px); position: relative; z-index: 1; }
+  /* Audio: a soft white sphere behind the cloud whose outline slowly deforms (several slow
+     harmonics), drawn on a canvas and blurred; paused, it holds still and fades out. */
+  .mist { position: absolute; left: 50%; top: 50%; width: min(110vmin, 760px); aspect-ratio: 1; translate: -50% -50%;
+    display: none; pointer-events: none; opacity: 0; filter: blur(28px); transition: opacity 1.2s var(--ease-out); }
+  .stage.audio .mist { display: block; }
+  .stage.audio.playing .mist { opacity: 1; }
+  .hint { position: absolute; bottom: 14%; width: 100%; text-align: center; color: var(--muted); display: none; }
+  .stage.idle .hint { display: block; }
+  /* Discreet version / update button, bottom-right of the idle screen */
+  .upd { all: unset; position: absolute; right: 14px; bottom: 12px; display: none; align-items: center; gap: 7px;
+    padding: 5px 10px; border-radius: 999px; font-size: 12px; color: rgba(244, 242, 250, .42); cursor: pointer;
+    transition: color .15s, background .15s; }
+  .stage.idle .upd { display: inline-flex; }
+  .upd:hover { color: var(--fg); background: rgba(255, 255, 255, .07); }
+  .upd .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg); display: none; }
+  .upd.available { color: rgba(244, 242, 250, .75); }
+  .upd.available .dot { display: block; }
+
+  /* Controls */
+  .controls { position: absolute; inset: auto 0 0 0; padding: 28px 16px 12px; transition: opacity .25s; z-index: 2; }
+  .stage.idle .controls { display: none; }
+  .stage.hide-ui .controls { opacity: 0; }
+
+  .timeline { position: relative; height: 16px; cursor: pointer; touch-action: none; }
+  .timeline .track { position: absolute; left: 0; right: 0; top: 6px; height: 3px; border-radius: 2px; background: var(--line);
+    transition: top .15s, height .15s; }
+  .timeline:hover .track, .timeline.scrubbing .track { top: 4px; height: 6px; }
+  .timeline .fill { height: 100%; width: 0; border-radius: inherit;
+    background-image: var(--holo); background-size: var(--full, 100vw) 100%; background-repeat: no-repeat; }
+  .timeline .sel { position: absolute; top: 2px; height: 10px; border-radius: 3px; background: rgba(255, 255, 255, .16);
+    border: 1px solid rgba(255, 255, 255, .5); pointer-events: none; display: none; }
+  .timeline .mark { position: absolute; top: 3px; width: 8px; height: 8px; margin-left: -4px; rotate: 45deg; border-radius: 1px;
+    background: var(--fg); opacity: .85; }
+  .timeline .mark { transition: scale .2s var(--ease-out), opacity .2s; }
+  .timeline .mark.active { opacity: 1; scale: 1.4; }
+  /* Hover label: the timecode, replaced by the marker name rising from below when on a marker */
+  .timeline .hover-time { position: absolute; bottom: 20px; translate: -50% 0; height: 22px; width: 48px; border-radius: 6px;
+    overflow: hidden; background: var(--fg); color: var(--bar); font-size: 12px; font-weight: 600; white-space: nowrap;
+    pointer-events: none; opacity: 0; transition: opacity .12s, width .3s var(--ease-out); font-variant-numeric: tabular-nums; }
+  .timeline:hover .hover-time, .timeline.scrubbing .hover-time { opacity: 1; }
+  .hover-time span { position: absolute; left: 50%; top: 0; width: max-content; padding: 0 8px; line-height: 22px;
+    translate: -50% 0; transition: transform .34s var(--ease-out), opacity .22s, filter .22s; }
+  .hover-time .mk { transform: translateY(100%); opacity: 0; filter: blur(3px); }
+  .hover-time.on-mark .tc { transform: translateY(-100%); opacity: 0; filter: blur(3px); }
+  .hover-time.on-mark .mk { transform: none; opacity: 1; filter: none; }
+
+  .bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  /* Two translucent pills (left: transport, right: options), like YouTube, instead of a dark gradient */
+  .bar .group { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px;
+    background: rgba(28, 27, 32, .52); backdrop-filter: blur(18px) saturate(1.3);
+    border: 1px solid rgba(255, 255, 255, .08); box-shadow: 0 4px 18px rgba(0, 0, 0, .18); }
+  .bar button { all: unset; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px; cursor: pointer; color: var(--fg); }
+  .bar button:hover, .bar button.on { background: var(--hover); }
+  .bar button:active .ico { transform: scale(.88); }
+  .bar button[hidden] { display: none; }
+  .bar .ico { transition: transform .1s; }
+  .bar .gap { flex: 1; }
+  .bar .stat { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); padding: 0 10px 0 4px; white-space: nowrap; }
+  .bar .stat + .stat { padding-left: 0; }
+  .bar .stat b { color: var(--fg); font-weight: 600; }
+
+  /* Volume: slider opens on hover, value glides */
+  .vol { display: flex; align-items: center; }
+  .vol .slider { width: 0; overflow: hidden; transition: width .2s var(--ease-out); display: flex; align-items: center; height: 38px; }
+  .vol:hover .slider, .vol.active .slider { width: 104px; }
+  /* The 12px knob is centred on the value: margins keep it clear of the icon and the clip edge */
+  .vol .rail { position: relative; width: 80px; height: 3px; margin: 0 14px 0 10px; flex: none; border-radius: 2px; background: var(--line); cursor: pointer; }
+  /* Invisible hit area much taller than the 3px line: easy to grab and drag */
+  .vol .rail::before { content: ""; position: absolute; inset: -16px -8px; }
+  .vol .rail { transition: height .15s; }
+  .vol .rail:hover, .vol .rail.dragging { height: 5px; }
+  .vol .rail .level { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--fg); }
+  .vol .rail .knob { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--fg); }
+
+  /* Menus: transitions.dev "Menu dropdown", origin-aware open / close */
+  .menu { position: fixed; min-width: 230px; padding: 6px; background: var(--panel);
+    backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .5); z-index: 30;
+    visibility: hidden; opacity: 0; transform: scale(.94); filter: blur(2px);
+    transition: opacity .12s, transform .12s, filter .12s, visibility 0s .12s; }
+  .menu.open { visibility: visible; opacity: 1; transform: none; filter: none;
+    transition: opacity .18s var(--ease-out), transform .22s var(--ease-out), filter .18s, visibility 0s; }
+  .menu .head { padding: 6px 10px 4px; font-size: 12px; color: var(--muted); }
+  .menu .item { display: flex; justify-content: space-between; gap: 24px; padding: 7px 10px; border-radius: 8px; cursor: pointer; position: relative; }
+  .menu .item:hover { background: var(--hover); }
+  .menu .item.disabled { opacity: .4; pointer-events: none; }
+  .menu .item kbd, .menu .item .val { font: inherit; color: var(--muted); }
+  .menu .item.checked::after { content: "✓"; }
+  .menu .sep { height: 1px; margin: 5px 4px; background: var(--line); }
+  .menu .chips { display: flex; gap: 4px; padding: 2px 6px 6px; }
+  .menu .chips span { padding: 4px 10px; border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .menu .chips span:hover { background: var(--hover); }
+  .menu .chips span.checked { background: var(--fg); color: var(--bar); font-weight: 600; }
+
+  /* transitions.dev "Toast": rises in with fade, blur and scale */
+  .toast { position: absolute; left: 50%; bottom: 96px; padding: 8px 14px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px); z-index: 20;
+    opacity: 0; transform: translate(-50%, 10px) scale(.95); filter: blur(4px);
+    transition: opacity .18s, transform .18s, filter .18s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); filter: none;
+    transition: opacity .25s var(--ease-out), transform .3s var(--ease-out), filter .25s; }
+
+  /* Tooltip: delayed in, each one pops on its own button (no sliding between buttons), instant out */
+  .tip { position: fixed; padding: 4px 8px; border-radius: 8px; background: var(--fg); color: var(--bar);
+    font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; z-index: 35;
+    opacity: 0; transform: translate(-50%, 0); }
+  .tip.show { opacity: 1; animation: tip-in .26s var(--ease-out) both; }
+  @keyframes tip-in { from { opacity: 0; transform: translate(-50%, 6px) scale(.96); filter: blur(3px); } }
+
+  /* Dragging a file over the window: blur + small dotted target with a plus */
+  .drop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; pointer-events: none;
+    background: rgba(27, 26, 30, .55); backdrop-filter: blur(16px) saturate(1.1);
+    opacity: 0; transition: opacity .18s var(--ease-out); }
+  .stage.dragging .drop { opacity: 1; }
+  .drop .target { position: relative; width: 72px; height: 72px; display: grid; place-items: center;
+    transform: scale(.85); transition: transform .3s var(--ease-out); }
+  .stage.dragging .drop .target { transform: none; }
+  /* Only the dotted ring turns; the plus stays still */
+  .drop .target::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px dashed rgba(244, 242, 250, .75); }
+  .stage.dragging .drop .target::before { animation: target-spin 8s linear infinite; }
+  .drop .target .ico { width: 24px; height: 24px; }
+  @keyframes target-spin { to { rotate: 360deg; } }
+
+  /* transitions.dev "Matrix dot loader": 5×5 dots pulsing through four patterns while a file opens */
+  .loader { position: absolute; left: 50%; top: 50%; z-index: 24; display: grid; grid-template-columns: repeat(5, 5px);
+    gap: 5px; translate: -50% -50%; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .loader.show { opacity: 1; }
+  .loader i { width: 5px; height: 5px; border-radius: 1px; background: var(--fg); }
+
+  /* Update prompt: transitions.dev-style modal (fade + scale), over a blurred, dimmed stage */
+  .modal-back { position: fixed; inset: var(--titlebar) 0 0 0; z-index: 45; display: grid; place-items: center;
+    background: rgba(17, 16, 20, .5); backdrop-filter: blur(10px); opacity: 0; visibility: hidden;
+    transition: opacity .18s, visibility 0s .18s; }
+  .modal-back.open { opacity: 1; visibility: visible; transition: opacity .22s var(--ease-out), visibility 0s; }
+  .modal { width: min(380px, calc(100vw - 32px)); padding: 22px 22px 18px; border-radius: 18px; text-align: center;
+    background: #1f1e23; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+    transform: scale(.94) translateY(6px); opacity: 0; transition: transform .18s, opacity .18s; }
+  .modal-back.open .modal { transform: none; opacity: 1; transition: transform .32s var(--ease-out), opacity .22s; }
+  .modal .logo { width: 60px; height: 60px; margin: 0 auto 10px; display: block; }
+  .modal h2 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
+  .modal p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+  .modal p b { color: var(--fg); font-weight: 600; }
+  .modal .never { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  /* Fixed-size box: checking it never changes the layout (no outline, the tick is drawn inside) */
+  .modal .never input { appearance: none; flex: none; box-sizing: border-box; width: 16px; height: 16px; margin: 0; padding: 0;
+    border-radius: 5px; border: 1.5px solid rgba(255, 255, 255, .35); outline: none; cursor: pointer; position: relative;
+    transition: background .15s, border-color .15s, box-shadow .15s; }
+  .modal .never input:focus-visible { box-shadow: 0 0 0 3px rgba(255, 255, 255, .18); }
+  .modal .never input:checked { background: var(--fg); border-color: var(--fg); }
+  .modal .never input::after { content: ""; position: absolute; left: 3.5px; top: 1.5px; width: 4px; height: 8px;
+    border: solid var(--bar); border-width: 0 2px 2px 0; rotate: 45deg; opacity: 0; transition: opacity .12s; }
+  .modal .never input:checked::after { opacity: 1; }
+  .modal .actions { display: flex; gap: 8px; }
+  .modal .actions button { all: unset; flex: 1; padding: 9px 0; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; }
+  .modal .actions .later { background: rgba(255, 255, 255, .08); }
+  .modal .actions .later:hover { background: rgba(255, 255, 255, .14); }
+  .modal .actions .go { background: var(--fg); color: var(--bar); }
+  .modal .actions .go:hover { background: #fff; }
+  /* Installing: the checkbox and buttons give way to a progress bar */
+  .modal .progress { display: none; margin-top: 4px; }
+  .modal.installing .never, .modal.installing .actions { display: none; }
+  .modal.installing .progress { display: block; }
+  .modal .progress .track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+  .modal .progress .bar { height: 100%; width: 0; border-radius: inherit; background: var(--fg); transition: width .25s var(--ease-out); }
+  .modal .progress .bar.busy { width: 100% !important; background: linear-gradient(90deg, rgba(244, 242, 250, .35), var(--fg), rgba(244, 242, 250, .35));
+    background-size: 200% 100%; animation: busy 1.1s linear infinite; }
+  @keyframes busy { to { background-position: -200% 0; } }
+  .modal .progress .label { margin-top: 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
