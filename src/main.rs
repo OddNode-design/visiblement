@@ -9,6 +9,7 @@ use std::{ptr, thread};
 mod app;
 mod editor;
 mod markers;
+mod update;
 
 use app::run;
 
@@ -274,6 +275,7 @@ fn check_for_update(manual: bool) {
             }
             return;
         }
+        update::remember(tag, update::msi_asset(&body));
         app::offer_update(tag, manual || !never_ask_update());
     });
 }

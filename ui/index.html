@@ -79,7 +79,7 @@
     transition: color .15s, background .15s; }
   .stage.idle .upd { display: inline-flex; }
   .upd:hover { color: var(--fg); background: rgba(255, 255, 255, .07); }
-  .upd .dot { width: 6px; height: 6px; border-radius: 50%; background: #9df5b4; display: none; }
+  .upd .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg); display: none; }
   .upd.available { color: rgba(244, 242, 250, .75); }
   .upd.available .dot { display: block; }
 
@@ -223,6 +223,16 @@
   .modal .actions .later:hover { background: rgba(255, 255, 255, .14); }
   .modal .actions .go { background: var(--fg); color: var(--bar); }
   .modal .actions .go:hover { background: #fff; }
+  /* Installing: the checkbox and buttons give way to a progress bar */
+  .modal .progress { display: none; margin-top: 4px; }
+  .modal.installing .never, .modal.installing .actions { display: none; }
+  .modal.installing .progress { display: block; }
+  .modal .progress .track { height: 6px; border-radius: 3px; background: rgba(255, 255, 255, .1); overflow: hidden; }
+  .modal .progress .bar { height: 100%; width: 0; border-radius: inherit; background: var(--fg); transition: width .25s var(--ease-out); }
+  .modal .progress .bar.busy { width: 100% !important; background: linear-gradient(90deg, rgba(244, 242, 250, .35), var(--fg), rgba(244, 242, 250, .35));
+    background-size: 200% 100%; animation: busy 1.1s linear infinite; }
+  @keyframes busy { to { background-position: -200% 0; } }
+  .modal .progress .label { margin-top: 10px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
 
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
@@ -318,8 +328,9 @@
       <label class="never"><input type="checkbox" id="updateNever"> Ne plus demander</label>
       <div class="actions">
         <button class="later" id="updateLater">Plus tard</button>
-        <button class="go" id="updateGo">Télécharger</button>
+        <button class="go" id="updateGo">Installer</button>
       </div>
+      <div class="progress"><div class="track"><div class="bar" id="updateBar"></div></div><div class="label" id="updateLabel"></div></div>
     </div>
   </div>
   <div class="edge"></div>
@@ -365,12 +376,27 @@ window.vb = {
   drag(on) { stage.classList.toggle("dragging", on); },
   // Startup check found a newer GitHub release (src/main.rs check_for_update).
   // prompt false: "Ne plus demander" was ticked, so only the discreet button lights up.
-  updateAvailable({ latest, current, prompt }) {
+  updateAvailable({ latest, current, prompt, installable }) {
     const v = latest.replace(/^v/, "");
+    canInstall = !!installable;
+    $("updateGo").textContent = canInstall ? "Installer" : "Télécharger";
     $("updateText").innerHTML = `Visiblement <b>${v}</b> est prête. Tu as la version ${current}.`;
     $("updBtn").classList.add("available");
     $("updText").textContent = `Mise à jour ${v} disponible`;
     if (prompt) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
+  },
+  // Download progress (0-100), then "install" while Windows Installer takes over.
+  updateProgress(p) {
+    document.querySelector(".modal").classList.add("installing");
+    const bar = $("updateBar");
+    if (p === "install") { bar.classList.add("busy"); $("updateLabel").textContent = "Installation… Visiblement va redémarrer"; }
+    else { bar.classList.remove("busy"); bar.style.width = p + "%"; $("updateLabel").textContent = `Téléchargement… ${p} %`; }
+  },
+  updateFailed() {
+    document.querySelector(".modal").classList.remove("installing");
+    canInstall = false; $("updateGo").textContent = "Télécharger";
+    $("updateBack").classList.add("open");
+    toast("Échec de la mise à jour : télécharge-la depuis la page des versions");
   },
   version(v) { if (!$("updBtn").classList.contains("available")) $("updText").textContent = `Version ${v} · Rechercher une mise à jour`; },
   maximized(on) { win.classList.toggle("maximized", on); swapIcon($("wMax").querySelector(".ico"), on ? "copy" : "square"); },
@@ -851,11 +877,16 @@ addEventListener("mousemove", () => {
 document.documentElement.addEventListener("mouseleave", () => { clearTimeout(hideTimer); hideUi(); });
 
 // Update prompt buttons. "Ne plus demander" is remembered by the Rust side (settings.json).
+let canInstall = false;
 function closeUpdate(download) {
   send({ t: "update", download, never: $("updateNever").checked });
   $("updateBack").classList.remove("open");
 }
-$("updateGo").onclick = () => closeUpdate(true);
+$("updateGo").onclick = () => {
+  if (!canInstall) return closeUpdate(true);
+  send({ t: "install-update", never: $("updateNever").checked });
+  vb.updateProgress(0);
+};
 // The discreet button: shows the prompt again if an update is known, otherwise checks now.
 $("updBtn").onclick = () => {
   if ($("updBtn").classList.contains("available")) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }

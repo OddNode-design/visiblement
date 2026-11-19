@@ -2,7 +2,9 @@
 
 <h1 align="center">Visiblement</h1>
 
-<p align="center">Lecteur vidéo pour Windows, construit sur mpv. Vous y glissez une vidéo, une image ou un son et il le lit avec le décodage de votre carte graphique.</p>
+<p align="center">Lecteur vidéo pour Windows, construit sur mpv. Il lit à peu près tous les fichiers. Visiblement.</p>
+
+<p align="center">Vous y glissez une vidéo, une image ou un son et il le lit avec le décodage de votre carte graphique.</p>
 
 ## Ce que vous pouvez ouvrir
 

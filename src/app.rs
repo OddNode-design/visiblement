@@ -47,6 +47,10 @@ pub enum UserEvent {
     Drag(&'static str, Vec<PathBuf>),
     /// A newer release exists (tag); `prompt` opens the dialog, otherwise only the button lights up.
     Update(String, bool),
+    /// JavaScript to run in the page, from a worker thread.
+    Eval(String),
+    /// Close the app (e.g. to let the installer replace it).
+    Close,
     Quit,
 }
 
@@ -63,6 +67,15 @@ fn send(ev: UserEvent) {
 }
 
 /// Shows the update prompt in the UI (now, or as soon as the page is ready).
+/// Runs JavaScript in the page, from any thread.
+pub fn eval_js(js: &str) {
+    send(UserEvent::Eval(js.to_string()));
+}
+
+pub fn request_close() {
+    send(UserEvent::Close);
+}
+
 pub fn offer_update(tag: &str, prompt: bool) {
     send(UserEvent::Update(tag.to_string(), prompt));
 }
@@ -158,6 +171,10 @@ fn mpv_events(m: Mpv) {
                     let idle = m.get("idle-active").as_deref() == Some("yes");
                     let audio = !idle && m.get("current-tracks/video/id").is_none() && m.get("current-tracks/audio/id").is_some();
                     m.set("background-color", if idle || audio { BG_LOGO } else { BG_VIDEO });
+                }
+                // mpv does not notify estimated-frame-number on its own: refresh it with the position.
+                if name == "time-pos" {
+                    send(UserEvent::Prop("estimated-frame-number".into(), m.get("estimated-frame-number")));
                 }
                 let value = m.get(&name);
                 send(UserEvent::Prop(name, value));
@@ -360,7 +377,7 @@ pub fn run() -> Result<(), String> {
     let mut grab: Option<Grab> = None;
     let (mut ui_ready, mut update_offer): (bool, Option<(String, bool)>) = (false, None);
     let show_update = |webview: &WebView, tag: &str, prompt: bool| {
-        let info = json!({ "latest": tag, "current": env!("CARGO_PKG_VERSION"), "prompt": prompt });
+        let info = json!({ "latest": tag, "current": env!("CARGO_PKG_VERSION"), "prompt": prompt, "installable": crate::update::installable() });
         eval(webview, &format!("window.vb && vb.updateAvailable({info})"));
     };
 
@@ -386,6 +403,8 @@ pub fn run() -> Result<(), String> {
                 UserEvent::Loading(on) => eval(&webview, &format!("window.vb && vb.loading({on})")),
                 UserEvent::VideoSize(w, h) => fit_to_video(&ui, &mode, w, h),
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
+                UserEvent::Eval(js) => eval(&webview, &js),
+                UserEvent::Close => close(&ui, &video, &m),
                 UserEvent::Update(tag, prompt) => {
                     if ui_ready {
                         show_update(&webview, &tag, prompt);
@@ -496,6 +515,12 @@ pub fn run() -> Result<(), String> {
                             _ => {}
                         },
                         "check-update" => crate::check_for_update(true),
+                        "install-update" => {
+                            if msg["never"].as_bool() == Some(true) {
+                                crate::set_never_ask_update(true);
+                            }
+                            crate::update::install();
+                        }
                         "update" => {
                             update_offer = None;
                             if msg["never"].as_bool() == Some(true) {
