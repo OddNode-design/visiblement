@@ -8,6 +8,8 @@
 - **Rapide** : décodage GPU (NVDEC, D3D11VA…) avec repli automatique sur le CPU, rendu `gpu-next`, basé sur [libmpv](https://mpv.io).
 - **Transparence** : ProRes 4444, PNG, QuickTime Animation… Un bouton damier apparaît quand la vidéo a une couche alpha (touche `T`).
 - **Vertical, 4K, 8K** : la fenêtre s'adapte à l'écran ; décodage GPU jusqu'en 8K (HEVC, AV1, VP9 selon la carte graphique).
+- **Marqueurs audio** : les marqueurs d'un WAV (cue points, marqueurs After Effects / Premiere / Audition) apparaissent sur la barre de lecture, avec leur nom au survol.
+- **Mini éditeur** : `I` / `O` pour le début et la fin, `Ctrl+E` pour enregistrer l'extrait (même format que l'original : WAV 24 bits, ProRes 4444 avec alpha, H.264…).
 - **Le dossier en playlist** : précédent / suivant passent aux autres vidéos du même dossier.
 - **Frame par frame** : numéro de frame dans la barre du haut, `,` et `.` pour reculer / avancer d'une image.
 - **Clic droit** : enregistrer la frame affichée (PNG, JPG, WebP) ou la copier dans le presse-papiers.
@@ -34,6 +36,10 @@
 | S | Sous-titres |
 | L | Lire en boucle |
 | T | Damier de transparence (vidéos alpha) |
+| I / O | Début / fin de l'extrait |
+| Ctrl+E | Enregistrer l'extrait sous… |
+| Alt+X | Effacer la sélection |
+| Ctrl+O | Ouvrir un fichier |
 | Ctrl+S | Enregistrer la frame sous… |
 | Ctrl+C | Copier la frame |
 | K | Tous les raccourcis |
