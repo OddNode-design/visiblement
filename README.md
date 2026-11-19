@@ -44,7 +44,7 @@
 Pour obtenir un journal détaillé de lecture :
 
 ```powershell
-$env:VISIBLEMENT_LOG = "$env:TEMPisiblement.log"; .isiblement.exe video.mov
+$env:VISIBLEMENT_LOG = "$env:TEMP\visiblement.log"; .\visiblement.exe video.mov
 ```
 
 ## Compiler
