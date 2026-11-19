@@ -586,7 +586,11 @@ Object.assign(actions, {
   openFiles: () => send({ t: "open-files" }),
   openFolder: () => send({ t: "open-folder" }),
   openUrl: () => { modalOpen("netBack"); setTimeout(() => $("netUrl").focus(), 50); },
-  openCamera: () => { $("camText").textContent = "Recherche des caméras…"; $("camList").replaceChildren(); modalOpen("camBack"); send({ t: "list-cameras" }); },
+  openCamera: () => {
+    $("camText").textContent = "Recherche des caméras…"; $("camList").replaceChildren();
+    $("ndiText").textContent = "Recherche sur le réseau…"; $("ndiList").replaceChildren();
+    modalOpen("camBack"); send({ t: "list-cameras" }); send({ t: "list-ndi" });
+  },
 });
 document.querySelectorAll(".dropdown .dd[data-act]").forEach(b => b.addEventListener("click", () => { closeNav(); actions[b.dataset.act]?.(); }));
 $("netExamples").querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -609,11 +613,24 @@ vb.recent = list => {
   $("recentMenu").replaceChildren(...(items.length ? items : [el("div", "dd disabled", "Aucun média récent")]));
 };
 
+// NDI sources on the network (null: no NDI runtime on this PC)
+vb.ndi = list => {
+  $("ndiText").textContent = list === null ? "Installez NDI Tools pour recevoir les sources NDI."
+    : list.length ? "Sources trouvées sur le réseau :" : "Aucune source NDI trouvée sur le réseau.";
+  $("ndiList").replaceChildren(...(list || []).map(name => {
+    const b = el("button");
+    const icon = el("i", "ico"); icon.dataset.i = "globe"; setSrc(icon);
+    b.append(icon, el("span", "", name));
+    b.onclick = () => { send({ t: "open-ndi", name }); closeModal($("camBack")); };
+    return b;
+  }));
+};
+
 // Capture devices
 vb.cameras = list => {
   $("camText").textContent = list.length
     ? "Choisissez une caméra, une carte d'acquisition ou une caméra virtuelle."
-    : "Aucun périphérique détecté. Pour une source NDI, lancez « NDI Webcam » (NDI Tools) puis réessayez.";
+    : "Aucune webcam ni carte d'acquisition détectée.";
   $("camList").replaceChildren(...list.map(name => {
     const b = el("button");
     const icon = el("i", "ico"); icon.dataset.i = "webcam"; setSrc(icon);

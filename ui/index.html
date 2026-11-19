@@ -19,7 +19,7 @@
           <button class="dd" data-act="openFiles"><i class="ico" data-i="files"></i><span class="dd-text"><b>Ouvrir plusieurs fichiers</b><small>Ils s'enchaînent dans la playlist</small></span></button>
           <button class="dd" data-act="openFolder"><i class="ico" data-i="folder-open"></i><span class="dd-text"><b>Ouvrir un dossier</b><small>Tous les médias du dossier, dans l'ordre</small></span></button>
           <button class="dd" data-act="openUrl"><i class="ico" data-i="globe"></i><span class="dd-text"><b>Ouvrir un flux réseau</b><small>Adresse http, rtsp, srt, udp…</small></span></button>
-          <button class="dd" data-act="openCamera"><i class="ico" data-i="webcam"></i><span class="dd-text"><b>Ouvrir un périphérique de capture</b><small>Webcam ou carte d'acquisition</small></span></button>
+          <button class="dd" data-act="openCamera"><i class="ico" data-i="webcam"></i><span class="dd-text"><b>Ouvrir un périphérique de capture</b><small>Webcam, carte d'acquisition ou source NDI</small></span></button>
           <div class="sep"></div>
           <div class="dd sub" id="recentItem"><i class="ico" data-i="history"></i><span class="dd-text"><b>Médias récents</b><small>Les derniers fichiers ouverts</small></span><i class="ico more" data-i="chevron-right"></i>
             <div class="dropdown subdrop" id="recentMenu"></div>
@@ -160,6 +160,9 @@
       <h2 id="camTitle">Périphérique de capture</h2>
       <p id="camText">Recherche des caméras…</p>
       <div class="cam-list" id="camList"></div>
+      <h3 class="cam-head">Sources NDI</h3>
+      <p class="cam-sub" id="ndiText">Recherche sur le réseau…</p>
+      <div class="cam-list" id="ndiList"></div>
       <div class="actions"><button class="later" data-close>Fermer</button></div>
     </div>
   </div>

@@ -16,6 +16,7 @@ Visiblement lit les formats que FFmpeg connaît : mp4, mov, mkv, webm, avi, gif,
 
 - **Vérifier une transparence.** Sur un ProRes 4444 exporté avec sa couche alpha, un WebM VP9 alpha ou un PNG, le bouton damier (touche `T`) affiche un damier derrière les zones transparentes. Un ProRes 4444 exporté en « RVB » seul n'a pas d'alpha et le damier n'y montre rien.
 - **Avancer image par image.** Les boutons ‹ › ou les touches `,` et `.` déplacent la lecture d'une image. Le numéro de frame reste affiché dans la barre.
+- **Recevoir une source NDI.** Média › Ouvrir un périphérique de capture liste les webcams, les caméras virtuelles et les sources NDI du réseau (avec le runtime de NDI Tools installé). La vidéo NDI s'affiche en direct ; le son n'est pas encore pris en charge.
 - **Parcourir un dossier.** Précédent et suivant passent aux autres fichiers du dossier de la vidéo ouverte.
 - **Lire les marqueurs d'un WAV.** Les cue points et les marqueurs posés dans After Effects, Premiere ou Audition apparaissent sur la barre de lecture. Au survol, le nom du marqueur remplace le timecode. Maintenez Maj en faisant glisser la tête de lecture pour l'aimanter au marqueur le plus proche.
 - **Couper un extrait.** `B` marque le début, `N` la fin, `Ctrl+E` enregistre l'extrait. Visiblement réencode dans le format d'origine : un WAV 24 bits reste en 24 bits, un ProRes 4444 garde son alpha.

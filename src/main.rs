@@ -9,6 +9,7 @@ use std::{ptr, thread};
 mod app;
 mod editor;
 mod markers;
+mod ndi;
 mod stream;
 mod update;
 
@@ -64,6 +65,7 @@ struct Mpv {
     destroy: unsafe extern "C" fn(Handle),
     hook_add: unsafe extern "C" fn(Handle, u64, *const c_char, c_int) -> c_int,
     hook_continue: unsafe extern "C" fn(Handle, u64) -> c_int,
+    stream_cb_add_ro: unsafe extern "C" fn(Handle, *const c_char, *mut c_void, ndi::OpenFn) -> c_int,
     set_option: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
     set_property: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
     get_property: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
@@ -408,6 +410,7 @@ fn load_mpv(dir: &Path) -> Result<(Library, Mpv), String> {
         destroy: sym!("mpv_terminate_destroy"),
         hook_add: sym!("mpv_hook_add"),
         hook_continue: sym!("mpv_hook_continue"),
+        stream_cb_add_ro: sym!("mpv_stream_cb_add_ro"),
         set_option: sym!("mpv_set_option_string"),
         set_property: sym!("mpv_set_property_string"),
         get_property: sym!("mpv_get_property_string"),

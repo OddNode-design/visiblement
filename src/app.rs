@@ -371,6 +371,8 @@ pub fn run() -> Result<(), String> {
     }
     // Before each file opens: turn WAV markers (cue points, After Effects XMP) into chapters.
     unsafe { (m.hook_add)(h, 0, c"on_load".as_ptr(), 0) };
+    // NDI sources play as ndi://<name>: the app feeds mpv the frames it receives (src/ndi.rs).
+    unsafe { (m.stream_cb_add_ro)(h, c"ndi".as_ptr(), std::ptr::null_mut(), crate::ndi::stream_open) };
     for p in OBSERVED {
         m.observe(p);
     }
@@ -409,6 +411,7 @@ pub fn run() -> Result<(), String> {
     let mut events = Some(events);
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     let mut grab: Option<Grab> = None;
+    let mut last_cursor = (0.0f64, f64::MAX);
     let (mut ui_ready, mut update_offer): (bool, Option<(String, bool)>) = (false, None);
     let show_update = |webview: &WebView, tag: &str, prompt: bool| {
         let info = json!({ "latest": tag, "current": env!("CARGO_PKG_VERSION"), "prompt": prompt, "installable": crate::update::installable() });
@@ -519,6 +522,9 @@ pub fn run() -> Result<(), String> {
                                 }
                             }
                             "grab-move" => {
+                                if let (Some(x), Some(y)) = (msg["x"].as_f64(), msg["y"].as_f64()) {
+                                    last_cursor = (x, y);
+                                }
                                 if let (Some(g), Some(x), Some(y)) = (&grab, msg["x"].as_f64(), msg["y"].as_f64()) {
                                     let min = (480.0 * ui.scale_factor(), (300.0 + TITLE_BAR) * ui.scale_factor());
                                     let (px, py, w, h) = g.apply(x, y, min);
@@ -530,7 +536,20 @@ pub fn run() -> Result<(), String> {
                                     }
                                 }
                             }
-                            "grab-end" => grab = None,
+                            // Released at the top edge of the screen: maximize, like Windows' snap.
+                            "grab-end" => {
+                                if let Some(g) = grab.take()
+                                    && g.dir.is_empty()
+                                    && let Some((monitor, work)) = win::monitor_rects(ui.hwnd())
+                                    && last_cursor.1 <= (monitor.1 + 3) as f64
+                                {
+                                    let prev = (g.pos.x, g.pos.y, g.size.width as i32, g.size.height as i32);
+                                    win::set_rect(ui.hwnd(), work);
+                                    mode = Mode::Maximized { prev };
+                                    eval(&webview, "window.vb && vb.maximized(true)");
+                                    sync_video(&ui, &video, false);
+                                }
+                            }
                             "min" => video.set_minimized(true),
                             "max" => {
                                 mode = match mode {
@@ -624,6 +643,13 @@ pub fn run() -> Result<(), String> {
                         "list-cameras" => {
                             thread::spawn(|| eval_js(&format!("window.vb && vb.cameras({})", json!(crate::list_cameras()))));
                         }
+                        "list-ndi" => {
+                            thread::spawn(|| {
+                                let list = crate::ndi::sources();
+                                eval_js(&format!("window.vb && vb.ndi({})", json!(list)));
+                            });
+                        }
+                        "open-ndi" => crate::ndi::open(m, s("name")),
                         "open-camera" => {
                             m.cmd(&["loadfile", &format!("av://dshow:video={}", s("name")), "replace"]);
                         }

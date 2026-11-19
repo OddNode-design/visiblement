@@ -322,3 +322,9 @@
   .mask { position: absolute; left: 0; top: 0; pointer-events: none; display: none; z-index: 1; }
   .mask.on { display: block; }
   .stage.idle .mask, .stage.audio .mask { display: none; }
+
+  .cam-head { margin: 4px 0 2px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .modal.form p.cam-sub { margin: 0 0 8px; }
+  /* Maximized or fullscreen: square corners, nothing behind shows through */
+  .window.maximized .titlebar, .window.fullscreen .titlebar { border-radius: 0; }
+  .window.maximized .edge { border-radius: 0; box-shadow: none; }
