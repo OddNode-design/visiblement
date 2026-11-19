@@ -67,7 +67,9 @@ function render() {
   stage.classList.toggle("audio", audio);
 
   const t = num("time-pos"), d = num("duration");
-  const name = idle ? "Visiblement" : (st.filename || "Visiblement");
+  // Streams: the real title (e.g. the YouTube video name) rather than the end of the address.
+  const isStream = (st.path || "").includes("://");
+  const name = idle ? "Visiblement" : ((isStream && st["media-title"]) || st.filename || "Visiblement");
   if ($("title").textContent !== name) $("title").textContent = name;
   const vp = json("video-params");
   $("res").textContent = !idle && !audio && vp && vp.w ? `${vp.w} × ${vp.h}` : "";

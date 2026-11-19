@@ -35,7 +35,7 @@ const OBSERVED: &[&str] = &[
     "pause", "time-pos", "duration", "volume", "mute", "filename", "path", "playlist-pos", "playlist-count",
     "estimated-frame-number", "estimated-frame-count", "container-fps", "idle-active", "speed", "loop-file",
     "keep-open", "ab-loop-a", "ab-loop-b", "chapter-list", "track-list", "sid", "aid", "background",
-    "hwdec-current", "current-tracks/video", "current-tracks/audio", "video-params", "osd-dimensions",
+    "hwdec-current", "current-tracks/video", "current-tracks/audio", "video-params", "osd-dimensions", "media-title",
 ];
 
 pub enum UserEvent {
