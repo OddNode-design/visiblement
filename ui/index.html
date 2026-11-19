@@ -64,7 +64,17 @@
   /* Idle screen and audio files: the cloud with living eyes */
   .mascot-screen { position: absolute; inset: 0; display: none; place-items: center; }
   .stage.idle .mascot-screen, .stage.audio .mascot-screen { display: grid; }
-  .mascot { width: min(50vmin, 320px); }
+  .mascot { width: min(50vmin, 320px); position: relative; z-index: 1; }
+  /* Audio playing: the logo colours drift and breathe behind the cloud; paused, they settle and dim */
+  .aura { position: absolute; left: 50%; top: 50%; width: min(78vmin, 520px); aspect-ratio: 1; translate: -50% -50%;
+    border-radius: 50%; display: none; pointer-events: none; opacity: .18; filter: blur(48px) saturate(1.2);
+    background: conic-gradient(from 0deg, #ff8fc8, #ffd98a, #9df5b4, #7fdcff, #a78bff, #ff8fc8);
+    animation: aura-spin 14s linear infinite, aura-breathe 4.2s ease-in-out infinite;
+    animation-play-state: paused; transition: opacity .8s var(--ease-out); }
+  .stage.audio .aura { display: block; }
+  .stage.audio.playing .aura { opacity: .55; animation-play-state: running; }
+  @keyframes aura-spin { to { rotate: 360deg; } }
+  @keyframes aura-breathe { 50% { scale: 1.12; } }
   .hint { position: absolute; bottom: 14%; width: 100%; text-align: center; color: var(--muted); display: none; }
   .stage.idle .hint { display: block; }
   /* Discreet version / update button, bottom-right of the idle screen */
@@ -235,6 +245,7 @@
 
   <div class="stage idle" id="stage">
     <div class="mascot-screen">
+      <div class="aura"></div>
       <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement">
         <image href="cloud.svg" width="512" height="512"/>
         <g fill="#121114" id="eyes">
@@ -391,6 +402,7 @@ function render() {
   if (!scrubbing) $("fill").style.width = (d ? Math.min(1, t / d) * 100 : 0) + "%";
 
   const paused = st.pause === "yes";
+  stage.classList.toggle("playing", !paused && !idle);
   swapIcon($("playIcon"), paused ? "play" : "pause");
   $("play").dataset.tip = paused ? "Lecture (Espace)" : "Pause (Espace)";
 

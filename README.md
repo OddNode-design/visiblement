@@ -18,9 +18,11 @@
 
 ## Installation
 
-1. Télécharger `Visiblement-windows-x64.zip` dans les [Releases](../../releases/latest).
-2. Dézipper où vous voulez.
-3. Ouvrir une vidéo avec `visiblement.exe` : glisser le fichier sur l'exe, « Ouvrir avec… », ou lancer l'exe puis glisser le fichier dans la fenêtre.
+**Installeur (recommandé)** : télécharger `Visiblement-x.y.z-x64.msi` dans les [Releases](../../releases/latest) et le lancer. Installation pour votre compte, sans droits administrateur, avec un raccourci dans le menu Démarrer et « Ouvrir avec » pour les vidéos et l'audio. Une nouvelle version s'installe par-dessus l'ancienne.
+
+**Portable** : `Visiblement-windows-x64.zip`, à dézipper où vous voulez, puis lancer `visiblement.exe`.
+
+Au lancement, Visiblement vérifie s'il existe une nouvelle version et le propose (avec une case « Ne plus demander »). Le petit bouton en bas à droite de l'écran d'accueil permet de vérifier à tout moment.
 
 ## Raccourcis
 
@@ -66,6 +68,14 @@ cargo build --release
 - le dossier `ui` de ce dépôt : l'interface (HTML/CSS/JS), modifiable sans recompiler.
 
 mpv dessine la vidéo dans une fenêtre ; l'interface est une page web affichée par WebView2 dans une fenêtre transparente posée dessus, qui pilote mpv (voir `src/app.rs`).
+
+## Fabriquer l'installeur
+
+Avec [WiX Toolset 5](https://wixtoolset.org) (`dotnet tool install --global wix --version 5.0.2`) :
+
+```powershell
+wix build installer\visiblement.wxs -arch x64 -d Version=0.1.0 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-0.1.0-x64.msi
+```
 
 ## Crédits et licences
 
