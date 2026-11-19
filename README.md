@@ -46,7 +46,7 @@ Au lancement, Visiblement vérifie s'il existe une nouvelle version et le propos
 | Ctrl+O | Ouvrir un fichier |
 | Ctrl+S | Enregistrer la frame sous… |
 | Ctrl+C | Copier la frame |
-| Q | Quitter |
+| Ctrl+Q | Quitter |
 
 ## Dépannage
 

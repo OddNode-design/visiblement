@@ -362,6 +362,111 @@ mod win {
     #[link(name = "user32")]
     unsafe extern "system" {
         pub fn MessageBoxW(hwnd: Hwnd, text: *const u16, caption: *const u16, flags: u32) -> i32;
+        fn GetWindowLongPtrW(hwnd: Hwnd, index: i32) -> isize;
+        fn SetWindowLongPtrW(hwnd: Hwnd, index: i32, value: isize) -> isize;
+        fn SetWindowPos(hwnd: Hwnd, after: Hwnd, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+        fn IsZoomed(hwnd: Hwnd) -> i32;
+        fn ShowWindow(hwnd: Hwnd, cmd: i32) -> i32;
+        fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hwnd;
+        fn RedrawWindow(hwnd: Hwnd, rect: *const c_void, region: Hwnd, flags: u32) -> i32;
+        fn GetMonitorInfoW(monitor: Hwnd, info: *mut MonitorInfo) -> i32;
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct WinRect {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct MonitorInfo {
+        size: u32,
+        monitor: WinRect,
+        work: WinRect,
+        flags: u32,
+    }
+
+    /// (whole monitor, work area without the taskbar) of the monitor holding the window.
+    pub type Rect = (i32, i32, i32, i32);
+
+    pub fn monitor_rects(hwnd: isize) -> Option<(Rect, Rect)> {
+        let mut info = MonitorInfo { size: std::mem::size_of::<MonitorInfo>() as u32, ..Default::default() };
+        // SAFETY: valid window handle; `info` is a correctly sized MONITORINFO. 2 = MONITOR_DEFAULTTONEAREST.
+        let ok = unsafe { GetMonitorInfoW(MonitorFromWindow(hwnd as Hwnd, 2), &mut info) } != 0;
+        let r = |r: &WinRect| (r.left, r.top, r.right - r.left, r.bottom - r.top);
+        ok.then(|| (r(&info.monitor), r(&info.work)))
+    }
+
+    /// Moves and resizes a window without activating it or changing its z-order.
+    pub fn set_rect(hwnd: isize, (x, y, w, h): Rect) {
+        // SAFETY: plain Win32 call on our own window. SWP_NOZORDER | SWP_NOACTIVATE.
+        unsafe {
+            SetWindowPos(hwnd as Hwnd, null_mut(), x, y, w.max(1), h.max(1), 0x0004 | 0x0010);
+            // Repaint everything: the transparent window would otherwise show stale pixels in the new area.
+            // RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW
+            RedrawWindow(hwnd as Hwnd, null(), null_mut(), 0x0001 | 0x0004 | 0x0080 | 0x0100);
+        }
+    }
+
+    #[link(name = "comctl32")]
+    unsafe extern "system" {
+        fn SetWindowSubclass(hwnd: Hwnd, proc: SubclassProc, id: usize, data: usize) -> i32;
+        fn DefSubclassProc(hwnd: Hwnd, msg: u32, w: usize, l: isize) -> isize;
+    }
+    type SubclassProc = unsafe extern "system" fn(Hwnd, u32, usize, isize, usize, usize) -> isize;
+
+    unsafe extern "system" fn no_frame(hwnd: Hwnd, msg: u32, w: usize, l: isize, _id: usize, _data: usize) -> isize {
+        match msg {
+            0x0085 => 0, // WM_NCPAINT: nothing to paint, the window has no visible frame
+            0x0086 => 1, // WM_NCACTIVATE: accept the (de)activation without drawing a caption
+            // SAFETY: forwarding to the next window procedure with the original arguments.
+            _ => unsafe { DefSubclassProc(hwnd, msg, w, l) },
+        }
+    }
+
+    /// The UI window is transparent and keeps caption styles (tao re-applies them): on activation,
+    /// Windows would paint a classic frame straight into its transparent surface, where it stays
+    /// visible as a ghost. This makes the window never paint a non-client frame.
+    pub fn never_paint_frame(hwnd: isize) {
+        // SAFETY: subclassing our own window on its own (UI) thread.
+        unsafe { SetWindowSubclass(hwnd as Hwnd, no_frame, 1, 0) };
+    }
+
+    /// Removes the hidden caption / resize frame styles of a borderless window.
+    pub fn strip_frame(hwnd: isize) {
+        const FRAME: isize = 0x00C0_0000 | 0x0004_0000 | 0x0001_0000; // WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZEBOX
+        // SAFETY: plain Win32 calls on our own window. SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED.
+        unsafe {
+            let style = GetWindowLongPtrW(hwnd as Hwnd, -16);
+            SetWindowLongPtrW(hwnd as Hwnd, -16, style & !FRAME);
+            SetWindowPos(hwnd as Hwnd, null_mut(), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020);
+        }
+    }
+
+    /// Puts the video window exactly at (x, y, w, h), frameless and not maximized. Windows can give
+    /// it back a caption and resize borders (e.g. after the UI window leaves fullscreen), so the
+    /// style is enforced every time rather than trusted.
+    pub fn place_frameless(hwnd: isize, x: i32, y: i32, w: i32, h: i32) {
+        const GWL_STYLE: i32 = -16;
+        const FRAME: isize = 0x00C0_0000 | 0x0004_0000 | 0x0001_0000; // WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZEBOX
+        // SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+        const FLAGS: u32 = 0x0004 | 0x0010 | 0x0020;
+        let hwnd = hwnd as Hwnd;
+        // SAFETY: plain Win32 calls on our own window handle.
+        unsafe {
+            if IsZoomed(hwnd) != 0 {
+                ShowWindow(hwnd, 4); // SW_SHOWNOACTIVATE: restore without stealing focus
+            }
+            let style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+            if style & FRAME != 0 {
+                SetWindowLongPtrW(hwnd, GWL_STYLE, style & !FRAME);
+            }
+            SetWindowPos(hwnd, null_mut(), x, y, w.max(1), h.max(1), FLAGS);
+        }
     }
     #[link(name = "shell32")]
     unsafe extern "system" {

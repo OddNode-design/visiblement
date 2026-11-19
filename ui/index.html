@@ -304,7 +304,7 @@
     <div class="item" data-act="play">Lecture / Pause <kbd>Espace</kbd></div>
     <div class="item" data-act="fs">Plein écran <kbd>F</kbd></div>
     <div class="sep"></div>
-    <div class="item" data-act="quit">Quitter <kbd>Q</kbd></div>
+    <div class="item" data-act="quit">Quitter <kbd>Ctrl+Q</kbd></div>
   </div>
   <div class="tip" id="tip"></div>
   <div class="modal-back" id="updateBack">
@@ -373,6 +373,7 @@ window.vb = {
     if (prompt) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
   },
   version(v) { if (!$("updBtn").classList.contains("available")) $("updText").textContent = `Version ${v} · Rechercher une mise à jour`; },
+  maximized(on) { win.classList.toggle("maximized", on); swapIcon($("wMax").querySelector(".ico"), on ? "copy" : "square"); },
   fullscreen(on) { win.classList.toggle("fullscreen", on); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
 };
 
@@ -814,6 +815,7 @@ addEventListener("keydown", ev => {
   const k = ev.key, c = ev.ctrlKey;
   if (k === "Escape") { if (anyMenuOpen()) closeAll(); else if (win.classList.contains("fullscreen")) $("fs").onclick(); return; }
   if (c && k.toLowerCase() === "o") { ev.preventDefault(); actions.open(); return; }
+  if (c && k.toLowerCase() === "q") { ev.preventDefault(); actions.quit(); return; }
   if (stage.classList.contains("idle")) return;
   if (k === " ") { ev.preventDefault(); togglePlay(); }
   else if (k === "ArrowRight") cmd("seek", 5, "relative+exact");
@@ -836,7 +838,6 @@ addEventListener("keydown", ev => {
   else if (k === "s") $("subsBtn").click();
   else if (k === "b") markIn();
   else if (k === "n") markOut();
-  else if (k === "q") actions.quit();
 });
 
 // Controls and cursor hide after 3 s without movement, or as soon as the mouse leaves the window

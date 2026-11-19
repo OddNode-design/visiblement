@@ -21,7 +21,7 @@ use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::platform::windows::{IconExtWindows, WindowBuilderExtWindows, WindowExtWindows};
-use tao::window::{Fullscreen, Icon, Window, WindowBuilder};
+use tao::window::{Icon, Window, WindowBuilder};
 use wry::http::{header::CONTENT_TYPE, Request, Response, StatusCode};
 use wry::{DragDropEvent, WebView, WebViewBuilder};
 
@@ -99,13 +99,12 @@ fn sync_video(ui: &Window, video: &Window, fullscreen: bool) {
     let Ok(pos) = ui.inner_position() else { return };
     let size = ui.inner_size();
     let bar = if fullscreen { 0 } else { (TITLE_BAR * ui.scale_factor()).round() as u32 };
-    video.set_outer_position(PhysicalPosition::new(pos.x, pos.y + bar as i32));
-    video.set_inner_size(PhysicalSize::new(size.width.max(1), size.height.saturating_sub(bar).max(1)));
+    win::place_frameless(video.hwnd(), pos.x, pos.y + bar as i32, size.width as i32, size.height.saturating_sub(bar) as i32);
 }
 
 /// New file: fit the window to the picture (90% of the screen at most), keeping its centre.
-fn fit_to_video(ui: &Window, w: f64, h: f64) {
-    if ui.is_maximized() || ui.fullscreen().is_some() || w <= 0.0 || h <= 0.0 {
+fn fit_to_video(ui: &Window, mode: &Mode, w: f64, h: f64) {
+    if !matches!(mode, Mode::Normal) || w <= 0.0 || h <= 0.0 {
         return;
     }
     let Some(mon) = ui.current_monitor() else { return };
@@ -172,6 +171,26 @@ fn eval(webview: &WebView, js: &str) {
     let _ = webview.evaluate_script(js);
 }
 
+/// Window state, handled here rather than with tao's maximize / fullscreen: those toggle the
+/// hidden caption and frame styles of the transparent UI window, and after a fullscreen round
+/// trip Windows ends up drawing a classic frame where the window used to be.
+#[derive(Clone, Copy, PartialEq)]
+enum Mode {
+    Normal,
+    /// Fills the monitor's work area; `prev` is the rectangle to restore.
+    Maximized { prev: Rect },
+    /// Covers the whole monitor; `prev` / `was_max` restore what was there before.
+    Fullscreen { prev: Rect, was_max: Option<Rect> },
+}
+
+type Rect = (i32, i32, i32, i32);
+
+fn rect_of(ui: &Window) -> Rect {
+    let p = ui.outer_position().unwrap_or_default();
+    let s = ui.outer_size();
+    (p.x, p.y, s.width as i32, s.height as i32)
+}
+
 /// A window move (empty `dir`) or resize from an edge ("n", "se"…), started at `cursor` (screen px).
 struct Grab {
     dir: String,
@@ -209,6 +228,23 @@ impl Grab {
     }
 }
 
+/// Closing: the windows disappear at once and mpv is asked to quit. mpv can be busy for a while
+/// (opening a huge file, a slow disk), so the process leaves anyway after a short grace period.
+/// Refused while an export runs, which would lose the file.
+fn close(ui: &Window, video: &Window, m: &Mpv) {
+    if EXPORTING.load(Ordering::Relaxed) {
+        toast("Export en cours, patiente avant de fermer");
+        return;
+    }
+    ui.set_visible(false);
+    video.set_visible(false);
+    m.cmd(&["quit"]);
+    thread::spawn(|| {
+        thread::sleep(Duration::from_millis(1500));
+        std::process::exit(0);
+    });
+}
+
 /// Loads dropped or chosen files: the first replaces the playlist (its folder becomes the playlist).
 fn load_paths(m: &Mpv, paths: &[PathBuf]) {
     for (i, p) in paths.iter().enumerate() {
@@ -243,6 +279,7 @@ pub fn run() -> Result<(), String> {
         .with_window_icon(icon)
         .with_owner_window(video.hwnd() as _)
         .with_skip_taskbar(true)
+        .with_visible(false) // shown once its hidden frame is gone, so it never paints one
         .with_inner_size(LogicalSize::new(1280.0, 720.0 + TITLE_BAR))
         .with_min_inner_size(LogicalSize::new(480.0, 300.0))
         .build(&event_loop)
@@ -255,7 +292,12 @@ pub fn run() -> Result<(), String> {
             my + (mon.size().height as i32 - s.height as i32) / 2,
         ));
     }
+    // Our own move / resize / maximize: the UI window needs no hidden caption or frame at all.
+    win::strip_frame(ui.hwnd());
+    win::never_paint_frame(ui.hwnd());
+    ui.set_visible(true);
     sync_video(&ui, &video, false);
+    let mut mode = Mode::Normal;
 
     // mpv, drawing into the video window.
     let h = unsafe { (api.create)() };
@@ -342,7 +384,7 @@ pub fn run() -> Result<(), String> {
                     }
                 }
                 UserEvent::Loading(on) => eval(&webview, &format!("window.vb && vb.loading({on})")),
-                UserEvent::VideoSize(w, h) => fit_to_video(&ui, w, h),
+                UserEvent::VideoSize(w, h) => fit_to_video(&ui, &mode, w, h),
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
                 UserEvent::Update(tag, prompt) => {
                     if ui_ready {
@@ -388,6 +430,7 @@ pub fn run() -> Result<(), String> {
                         "win" => match s("a").as_str() {
                             // Moving / resizing is driven by the page (pointer capture + screen coordinates):
                             // Windows' own drag loop can't start while WebView2 holds the mouse capture.
+                            "grab" if mode != Mode::Normal => {} // maximized / fullscreen: stays put
                             "grab" => {
                                 if let (Ok(pos), Some(x), Some(y)) = (ui.outer_position(), msg["x"].as_f64(), msg["y"].as_f64()) {
                                     grab = Some(Grab { dir: s("dir"), cursor: (x, y), pos, size: ui.outer_size() });
@@ -407,20 +450,49 @@ pub fn run() -> Result<(), String> {
                             }
                             "grab-end" => grab = None,
                             "min" => video.set_minimized(true),
-                            "max" => ui.set_maximized(!ui.is_maximized()),
+                            "max" => {
+                                mode = match mode {
+                                    Mode::Normal => match win::monitor_rects(ui.hwnd()) {
+                                        Some((_, work)) => {
+                                            let prev = rect_of(&ui);
+                                            win::set_rect(ui.hwnd(), work);
+                                            Mode::Maximized { prev }
+                                        }
+                                        None => Mode::Normal,
+                                    },
+                                    Mode::Maximized { prev } => {
+                                        win::set_rect(ui.hwnd(), prev);
+                                        Mode::Normal
+                                    }
+                                    fs => fs,
+                                };
+                                eval(&webview, &format!("window.vb && vb.maximized({})", matches!(mode, Mode::Maximized { .. })));
+                                sync_video(&ui, &video, false);
+                            }
                             "fs" => {
-                                let fullscreen = ui.fullscreen().is_none();
-                                ui.set_fullscreen(fullscreen.then_some(Fullscreen::Borderless(None)));
+                                mode = match mode {
+                                    Mode::Fullscreen { prev, was_max } => {
+                                        win::set_rect(ui.hwnd(), was_max.map_or(prev, |_| prev));
+                                        match was_max {
+                                            Some(before_max) => Mode::Maximized { prev: before_max },
+                                            None => Mode::Normal,
+                                        }
+                                    }
+                                    other => match win::monitor_rects(ui.hwnd()) {
+                                        Some((monitor, _)) => {
+                                            let prev = rect_of(&ui);
+                                            let was_max = match other { Mode::Maximized { prev } => Some(prev), _ => None };
+                                            win::set_rect(ui.hwnd(), monitor);
+                                            Mode::Fullscreen { prev, was_max }
+                                        }
+                                        None => other,
+                                    },
+                                };
+                                let fullscreen = matches!(mode, Mode::Fullscreen { .. });
                                 eval(&webview, &format!("window.vb && vb.fullscreen({fullscreen})"));
                                 sync_video(&ui, &video, fullscreen);
                             }
-                            "close" => {
-                                if EXPORTING.load(Ordering::Relaxed) {
-                                    crate::app::toast("Export en cours, patiente avant de fermer");
-                                } else {
-                                    m.cmd(&["quit"]);
-                                }
-                            }
+                            "close" => close(&ui, &video, &m),
                             _ => {}
                         },
                         "check-update" => crate::check_for_update(true),
@@ -474,17 +546,11 @@ pub fn run() -> Result<(), String> {
             },
             Event::WindowEvent { window_id, event, .. } => match event {
                 WindowEvent::Moved(_) | WindowEvent::Resized(_) if window_id == ui.id() => {
-                    sync_video(&ui, &video, ui.fullscreen().is_some());
+                    sync_video(&ui, &video, matches!(mode, Mode::Fullscreen { .. }));
                 }
                 // Clicking the taskbar entry activates the video window: hand focus to the UI.
                 WindowEvent::Focused(true) if window_id == video.id() => ui.set_focus(),
-                WindowEvent::CloseRequested => {
-                    if EXPORTING.load(Ordering::Relaxed) {
-                        toast("Export en cours, patiente avant de fermer");
-                    } else {
-                        m.cmd(&["quit"]);
-                    }
-                }
+                WindowEvent::CloseRequested => close(&ui, &video, &m),
                 _ => {}
             },
             _ => {}
