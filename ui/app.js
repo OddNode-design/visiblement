@@ -687,6 +687,7 @@ function moveTabPill() {
 $("infoTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
   $("infoTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
   infoTab = b.dataset.tab; moveTabPill(); renderInfo();
+  const body = $("infoBody"); body.scrollTop = 0; body.classList.remove("swap"); void body.offsetWidth; body.classList.add("swap");
 });
 vb.info = data => { info = data; renderInfo(); };
 $("infoBtn").onclick = () => {
