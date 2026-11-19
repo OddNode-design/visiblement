@@ -43,7 +43,9 @@ const OPTIONS: &[(&str, &str)] = &[
     ("osc", "no"),           // uosc (portable_config/scripts) replaces the stock controls
     ("osd-bar", "no"),
     ("border", "no"),        // uosc draws its own title bar
+    ("background", "color"),  // transparent videos: plain background; the alpha button switches to a checkerboard
     ("background-color", "#111014"),
+    ("autofit-larger", "90%x90%"), // 8K or vertical videos open at a size that fits the screen
     ("screenshot-high-bit-depth", "no"), // 8-bit frames: what the clipboard and most apps expect
     ("title", "${?filename:${filename} - }Visiblement"),
 ];
@@ -67,6 +69,7 @@ struct Mpv {
     h: Handle,
     set_option: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
     set_property: unsafe extern "C" fn(Handle, *const c_char, *const c_char) -> c_int,
+    set_property_raw: unsafe extern "C" fn(Handle, *const c_char, c_int, *mut c_void) -> c_int,
     get_property: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
     observe: unsafe extern "C" fn(Handle, u64, *const c_char, c_int) -> c_int,
     command: unsafe extern "C" fn(Handle, *const *const c_char) -> c_int,
@@ -88,6 +91,11 @@ impl Mpv {
     }
     fn set(&self, k: &str, v: &str) {
         unsafe { (self.set_property)(self.h, cstr(k).as_ptr(), cstr(v).as_ptr()) };
+    }
+    /// Boolean property (MPV_FORMAT_FLAG), e.g. for uosc button conditions.
+    fn set_flag(&self, k: &str, v: bool) {
+        let mut flag = c_int::from(v);
+        unsafe { (self.set_property_raw)(self.h, cstr(k).as_ptr(), 3, (&raw mut flag).cast()) };
     }
     fn get(&self, k: &str) -> Option<String> {
         unsafe {
@@ -115,6 +123,19 @@ impl Mpv {
     fn toast(&self, msg: &str) {
         self.cmd(&["show-text", msg, "1500"]);
     }
+}
+
+/// True when the current video carries transparency (ProRes 4444, PNG, QuickTime Animation…).
+fn has_alpha(m: &Mpv) -> bool {
+    let alpha = m.get("video-params/alpha").unwrap_or_default();
+    alpha == "straight" || alpha == "premul" || m.get("video-params/pixelformat").is_some_and(|f| is_alpha_format(&f))
+}
+
+/// FFmpeg pixel formats with an alpha plane: yuva420p, yuva444p10le, rgba, bgra, argb, gbrap, ya8, pal8 (GIF)…
+fn is_alpha_format(f: &str) -> bool {
+    let f = f.to_ascii_lowercase();
+    f.starts_with("yuva") || f.starts_with("gbra") || f.starts_with("ya") || f == "pal8"
+        || ["rgba", "bgra", "argb", "abgr"].iter().any(|p| f.starts_with(p))
 }
 
 // Animated images loop forever, like in a browser.
@@ -417,6 +438,7 @@ fn run() -> Result<(), String> {
         h,
         set_option: sym!("mpv_set_option_string"),
         set_property: sym!("mpv_set_property_string"),
+        set_property_raw: sym!("mpv_set_property"),
         get_property: sym!("mpv_get_property_string"),
         observe: sym!("mpv_observe_property"),
         command: sym!("mpv_command"),
@@ -430,19 +452,24 @@ fn run() -> Result<(), String> {
     for (k, v) in OPTIONS {
         m.option(k, v);
     }
+    // Troubleshooting: VISIBLEMENT_LOG=C:\path\log.txt writes mpv's log there.
+    if let Some(log) = std::env::var_os("VISIBLEMENT_LOG") {
+        m.option("log-file", &log.to_string_lossy());
+    }
     if unsafe { initialize(h) } < 0 {
         unsafe { destroy(h) };
         return Err("Impossible d'initialiser mpv.".into());
     }
     check_for_update();
     let mut idle = Idle::new(&config);
-    for p in ["idle-active", "osd-width", "osd-height", "mouse-pos"] {
+    for p in ["idle-active", "osd-width", "osd-height", "mouse-pos", "video-params"] {
         m.observe(p);
     }
 
     // Every argument is a file (or URL) to play, in order: also covers drag & drop onto the .exe.
-    for arg in std::env::args_os().skip(1) {
-        m.cmd(&["loadfile", &arg.to_string_lossy(), "append-play"]);
+    // The first file replaces the (empty) playlist so autocreate-playlist starts on it, not on its neighbour.
+    for (i, arg) in std::env::args_os().skip(1).enumerate() {
+        m.cmd(&["loadfile", &arg.to_string_lossy(), if i == 0 { "replace" } else { "append" }]);
     }
 
     let mut workers = Vec::new();
@@ -465,7 +492,10 @@ fn run() -> Result<(), String> {
             EVENT_PROPERTY_CHANGE => {
                 // SAFETY: data points to an mpv_event_property whose first field is the name.
                 let name = unsafe { CStr::from_ptr(*(ev.data as *const *const c_char)) };
-                if name.to_bytes() == b"mouse-pos" {
+                if name.to_bytes() == b"video-params" {
+                    // Shows the checkerboard button in the bar (portable_config/script-opts/uosc.conf).
+                    m.set_flag("user-data/visiblement/alpha", has_alpha(&m));
+                } else if name.to_bytes() == b"mouse-pos" {
                     idle.draw_eyes(&m);
                 } else {
                     idle.layout(&m);
@@ -591,6 +621,16 @@ mod tests {
         assert!(is_animated_image("x.webp"));
         assert!(!is_animated_image("x.mp4"));
         assert!(!is_animated_image("gif.mov"));
+    }
+
+    #[test]
+    fn alpha_pixel_formats() {
+        for f in ["yuva444p10le", "rgba", "bgra", "gbrap", "ya8", "pal8", "argb"] {
+            assert!(is_alpha_format(f), "{f}");
+        }
+        for f in ["yuv420p", "yuv422p10le", "nv12", "d3d11", "p010", "rgb24", "gbrp"] {
+            assert!(!is_alpha_format(f), "{f}");
+        }
     }
 
     #[test]

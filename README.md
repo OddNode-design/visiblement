@@ -6,6 +6,8 @@
 
 - **Tous les formats** que FFmpeg sait lire : mp4, mov (ProRes inclus), mkv, webm, avi, gif, webp animé, apng, images…
 - **Rapide** : décodage GPU (NVDEC, D3D11VA…) avec repli automatique sur le CPU, rendu `gpu-next`, basé sur [libmpv](https://mpv.io).
+- **Transparence** : ProRes 4444, PNG, QuickTime Animation… Un bouton damier apparaît quand la vidéo a une couche alpha (touche `T`).
+- **Vertical, 4K, 8K** : la fenêtre s'adapte à l'écran ; décodage GPU jusqu'en 8K (HEVC, AV1, VP9 selon la carte graphique).
 - **Le dossier en playlist** : précédent / suivant passent aux autres vidéos du même dossier.
 - **Frame par frame** : numéro de frame dans la barre du haut, `,` et `.` pour reculer / avancer d'une image.
 - **Clic droit** : enregistrer la frame affichée (PNG, JPG, WebP) ou la copier dans le presse-papiers.
@@ -31,10 +33,19 @@
 | F ou double-clic | Plein écran |
 | S | Sous-titres |
 | L | Lire en boucle |
+| T | Damier de transparence (vidéos alpha) |
 | Ctrl+S | Enregistrer la frame sous… |
 | Ctrl+C | Copier la frame |
 | K | Tous les raccourcis |
 | Q | Quitter |
+
+## Dépannage
+
+Pour obtenir un journal détaillé de lecture :
+
+```powershell
+$env:VISIBLEMENT_LOG = "$env:TEMPisiblement.log"; .isiblement.exe video.mov
+```
 
 ## Compiler
 
