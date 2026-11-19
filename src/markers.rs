@@ -52,9 +52,12 @@ pub fn parse_wav(b: &[u8]) -> Vec<Marker> {
                     let sub = &data[j..j + 4];
                     let len = u32_at(data, j + 4).unwrap_or(0) as usize;
                     let body = &data[j + 8..(j + 8 + len).min(data.len())];
+                    // "labl" is the marker's name, "note" its comment: the name wins when both exist.
                     if (sub == b"labl" || sub == b"note") && body.len() >= 4 {
                         let text = String::from_utf8_lossy(&body[4..]).trim_end_matches('\0').trim().to_string();
-                        labels.push((u32_at(body, 0).unwrap_or(0), text));
+                        if !text.is_empty() {
+                            labels.push((u32_at(body, 0).unwrap_or(0), sub == b"labl", text));
+                        }
                     }
                     j += 8 + len + (len & 1);
                 }
@@ -69,7 +72,12 @@ pub fn parse_wav(b: &[u8]) -> Vec<Marker> {
         cues.iter()
             .map(|&(cid, offset)| Marker {
                 time: offset as f64 / rate as f64,
-                name: labels.iter().find(|(l, _)| *l == cid).map(|(_, t)| t.clone()).unwrap_or_default(),
+                name: labels
+                    .iter()
+                    .filter(|(l, _, _)| *l == cid)
+                    .max_by_key(|(_, is_name, _)| *is_name)
+                    .map(|(_, _, t)| t.clone())
+                    .unwrap_or_default(),
             })
             .collect()
     } else {
@@ -95,6 +103,15 @@ fn xmp_value<'a>(s: &'a str, key: &str) -> Option<&'a str> {
     rest.find('<').map(|e| &rest[..e])
 }
 
+fn xml_unescape(s: &str) -> String {
+    s.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#xA;", " ")
+        .replace("&amp;", "&")
+}
+
 /// Marker times are counted in units of the track's frame rate: "f48000" (samples) or "f30000s1001".
 fn parse_rate(r: &str) -> Option<f64> {
     let r = r.strip_prefix('f')?;
@@ -116,7 +133,13 @@ pub fn parse_xmp_markers(x: &str, sample_rate: u32) -> Vec<Marker> {
         .skip(1)
         .filter_map(|li| {
             let t: f64 = xmp_value(li, "startTime")?.trim().parse().ok()?;
-            let name = xmp_value(li, "name").unwrap_or_default().to_string();
+            // After Effects keeps the marker text in "comment"; Premiere / Audition use "name".
+            let name = [xmp_value(li, "name"), xmp_value(li, "comment")]
+                .into_iter()
+                .flatten()
+                .map(|v| xml_unescape(v.trim()))
+                .find(|v| !v.is_empty())
+                .unwrap_or_default();
             Some(Marker { time: t / rate, name })
         })
         .collect()
@@ -198,6 +221,16 @@ mod tests {
         let file = wav(&[fmt(44_100), chunk(b"_PMX", xmp.as_bytes()), chunk(b"data", &[0; 2])]);
         let m = parse_wav(&file);
         assert_eq!(m, vec![Marker { time: 1.0, name: "Intro".into() }, Marker { time: 3.0, name: "Refrain".into() }]);
+    }
+
+    #[test]
+    fn after_effects_comment_is_the_name() {
+        let xmp = r#"<xmpDM:Tracks><rdf:li xmpDM:frameRate="f48000"><xmpDM:markers><rdf:Seq>
+            <rdf:li rdf:parseType="Resource"><xmpDM:startTime>96000</xmpDM:startTime><xmpDM:comment>Coup de c&amp;ymbale</xmpDM:comment></rdf:li>
+            <rdf:li xmpDM:startTime="0" xmpDM:name="" xmpDM:comment="Début"/>
+            </rdf:Seq></xmpDM:markers></rdf:li></xmpDM:Tracks>"#;
+        let m = parse_xmp_markers(xmp, 44_100);
+        assert_eq!(m.iter().map(|m| (m.time, m.name.as_str())).collect::<Vec<_>>(), vec![(2.0, "Coup de c&ymbale"), (0.0, "Début")]);
     }
 
     #[test]

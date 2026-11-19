@@ -85,11 +85,18 @@
     border: 1px solid rgba(255, 255, 255, .5); pointer-events: none; display: none; }
   .timeline .mark { position: absolute; top: 3px; width: 8px; height: 8px; margin-left: -4px; rotate: 45deg; border-radius: 1px;
     background: var(--fg); opacity: .85; }
-  .timeline .mark:hover { opacity: 1; scale: 1.3; }
-  .timeline .hover-time { position: absolute; bottom: 20px; translate: -50% 0; padding: 3px 7px; border-radius: 6px;
-    background: var(--fg); color: var(--bar); font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none;
-    opacity: 0; transition: opacity .12s; font-variant-numeric: tabular-nums; }
+  .timeline .mark { transition: scale .2s var(--ease-out), opacity .2s; }
+  .timeline .mark.active { opacity: 1; scale: 1.4; }
+  /* Hover label: the timecode, replaced by the marker name rising from below when on a marker */
+  .timeline .hover-time { position: absolute; bottom: 20px; translate: -50% 0; height: 22px; width: 48px; border-radius: 6px;
+    overflow: hidden; background: var(--fg); color: var(--bar); font-size: 12px; font-weight: 600; white-space: nowrap;
+    pointer-events: none; opacity: 0; transition: opacity .12s, width .3s var(--ease-out); font-variant-numeric: tabular-nums; }
   .timeline:hover .hover-time, .timeline.scrubbing .hover-time { opacity: 1; }
+  .hover-time span { position: absolute; left: 50%; top: 0; width: max-content; padding: 0 8px; line-height: 22px;
+    translate: -50% 0; transition: transform .34s var(--ease-out), opacity .22s, filter .22s; }
+  .hover-time .mk { transform: translateY(100%); opacity: 0; filter: blur(3px); }
+  .hover-time.on-mark .tc { transform: translateY(-100%); opacity: 0; filter: blur(3px); }
+  .hover-time.on-mark .mk { transform: none; opacity: 1; filter: none; }
 
   .bar { display: flex; align-items: center; gap: 2px; margin-top: 2px; }
   .bar button { all: unset; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; cursor: pointer; color: var(--fg); }
@@ -138,11 +145,12 @@
   .toast.show { opacity: 1; transform: translate(-50%, 0); filter: none;
     transition: opacity .25s var(--ease-out), transform .3s var(--ease-out), filter .25s; }
 
-  /* transitions.dev "Tooltip": delayed in, travels between buttons, instant out */
+  /* Tooltip: delayed in, each one pops on its own button (no sliding between buttons), instant out */
   .tip { position: fixed; padding: 4px 8px; border-radius: 8px; background: var(--fg); color: var(--bar);
     font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; z-index: 35;
-    opacity: 0; transform: translate(-50%, 4px); }
-  .tip.show { opacity: 1; transform: translate(-50%, 0); transition: opacity .15s, transform .15s var(--ease-out), left .2s var(--ease-out); }
+    opacity: 0; transform: translate(-50%, 0); }
+  .tip.show { opacity: 1; animation: tip-in .26s var(--ease-out) both; }
+  @keyframes tip-in { from { opacity: 0; transform: translate(-50%, 6px) scale(.96); filter: blur(3px); } }
 
   /* Dragging a file over the window: blur + small dotted target with a plus */
   .drop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; pointer-events: none;
@@ -196,7 +204,7 @@
         <div class="track"><div class="fill" id="fill"></div></div>
         <div class="sel" id="sel"></div>
         <div id="marks"></div>
-        <div class="hover-time" id="hoverTime"></div>
+        <div class="hover-time" id="hoverTime"><span class="tc" id="htTc"></span><span class="mk" id="htMk"></span></div>
       </div>
       <div class="bar">
         <button id="prev" data-tip="Précédente (Page préc.)"><i class="ico" data-i="skip-back"></i></button>
@@ -230,8 +238,8 @@
     <div class="item" data-act="copy">Copier la frame <kbd>Ctrl+C</kbd></div>
     <div class="sep"></div>
     <div class="head">Éditer</div>
-    <div class="item" data-act="markIn">Début de l'extrait ici <kbd>I</kbd></div>
-    <div class="item" data-act="markOut">Fin de l'extrait ici <kbd>O</kbd></div>
+    <div class="item" data-act="markIn">Début de l'extrait ici <kbd>B</kbd></div>
+    <div class="item" data-act="markOut">Fin de l'extrait ici <kbd>N</kbd></div>
     <div class="item" data-act="clearSel">Effacer la sélection <kbd>Alt+X</kbd></div>
     <div class="item" data-act="export">Enregistrer l'extrait sous… <kbd>Ctrl+E</kbd></div>
     <div class="sep"></div>
@@ -256,7 +264,7 @@ const $ = id => document.getElementById(id);
 const win = $("win"), stage = $("stage");
 
 // --- Bridge to the Rust side (src/app.rs)
-const send = msg => window.ipc.postMessage(JSON.stringify(msg));
+const send = msg => window.ipc?.postMessage(JSON.stringify(msg)); // no-op outside the app (browser preview)
 const cmd = (...a) => send({ t: "cmd", a: a.map(String) });
 const setProp = (k, v) => send({ t: "set", k, v: String(v) });
 const st = {}; // mirror of the observed mpv properties (strings, or parsed JSON for lists)
@@ -319,7 +327,7 @@ function render() {
   swapIcon($("alphaIcon"), tiles ? "grid-2x2-check" : "grid-2x2");
 }
 
-// Markers (WAV cue points / After Effects) and the I–O selection on the timeline.
+// Markers (WAV cue points / After Effects) and the B–N selection on the timeline.
 let marksKey = "";
 function renderMarks(d) {
   const chapters = json("chapter-list") || [];
@@ -329,9 +337,7 @@ function renderMarks(d) {
     $("marks").replaceChildren(...chapters.filter(() => d > 0).map(c => {
       const el = document.createElement("div");
       el.className = "mark"; el.style.left = (c.time / d * 100) + "%";
-      el.dataset.tip = c.title || "Marqueur";
-      el.addEventListener("mouseenter", () => showTip(el)); el.addEventListener("mouseleave", hideTip);
-      el.addEventListener("pointerdown", ev => { ev.stopPropagation(); cmd("seek", c.time, "absolute+exact"); });
+      el.dataset.time = c.time;
       return el;
     }));
   }
@@ -414,29 +420,54 @@ stage.addEventListener("dblclick", ev => {
 });
 
 // Scrubbing: press and drag on the timeline, the picture follows in real time.
-let scrubTarget = null, scrubRaf = 0;
-function timeAt(ev) {
-  const r = $("timeline").getBoundingClientRect();
-  return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)) * num("duration");
+// Shift held: the position snaps to the nearest marker (within 40 px).
+const SNAP_PX = 40, NEAR_PX = 8;
+let scrubTarget = null, scrubRaf = 0, lastPointerX = null;
+function pointAt(clientX, shift) {
+  const r = $("timeline").getBoundingClientRect(), d = num("duration");
+  let x = Math.min(r.width, Math.max(0, clientX - r.left));
+  let t = r.width ? x / r.width * d : 0, mark = null, best = Infinity;
+  if (d > 0) for (const c of json("chapter-list") || []) {
+    const dist = Math.abs(c.time / d * r.width - x);
+    if (dist < best) { best = dist; mark = c; }
+  }
+  const snapped = mark && shift && best <= SNAP_PX;
+  if (snapped) { t = mark.time; x = mark.time / d * r.width; }
+  return { t, x, width: r.width, mark: snapped || (mark && best <= NEAR_PX) ? mark : null };
 }
-function scrubTo(ev) {
-  const t = timeAt(ev), d = num("duration");
-  $("fill").style.width = (d ? t / d * 100 : 0) + "%";
-  scrubTarget = t;
+function showHover(p) {
+  const ht = $("hoverTime");
+  ht.style.left = Math.min(p.width - 24, Math.max(24, p.x)) + "px";
+  $("htTc").textContent = fmt(p.t);
+  if (p.mark) $("htMk").textContent = p.mark.title || "Marqueur";
+  ht.classList.toggle("on-mark", !!p.mark);
+  ht.style.width = (p.mark ? $("htMk") : $("htTc")).offsetWidth + "px";
+  document.querySelectorAll("#marks .mark").forEach(m => m.classList.toggle("active", !!p.mark && +m.dataset.time === p.mark.time));
+}
+function scrubTo(p) {
+  const d = num("duration");
+  $("fill").style.width = (d ? p.t / d * 100 : 0) + "%";
+  scrubTarget = p.t;
   if (!scrubRaf) scrubRaf = requestAnimationFrame(() => { scrubRaf = 0; if (scrubTarget != null) cmd("seek", scrubTarget, "absolute+exact"); });
+}
+function onTimeline(clientX, shift) {
+  lastPointerX = clientX;
+  const p = pointAt(clientX, shift);
+  showHover(p);
+  if (scrubbing) scrubTo(p);
 }
 $("timeline").addEventListener("pointerdown", ev => {
   if (ev.button !== 0) return;
   $("timeline").setPointerCapture(ev.pointerId);
-  scrubbing = true; $("timeline").classList.add("scrubbing"); scrubTo(ev);
+  scrubbing = true; $("timeline").classList.add("scrubbing"); onTimeline(ev.clientX, ev.shiftKey);
 });
-$("timeline").addEventListener("pointermove", ev => {
-  const r = $("timeline").getBoundingClientRect();
-  $("hoverTime").style.left = Math.min(r.width - 24, Math.max(24, ev.clientX - r.left)) + "px";
-  $("hoverTime").textContent = fmt(timeAt(ev));
-  if (scrubbing) scrubTo(ev);
-});
+$("timeline").addEventListener("pointermove", ev => onTimeline(ev.clientX, ev.shiftKey));
+$("timeline").addEventListener("pointerleave", () => { if (!scrubbing) lastPointerX = null; });
 $("timeline").addEventListener("pointerup", () => { scrubbing = false; $("timeline").classList.remove("scrubbing"); });
+// Pressing or releasing Shift without moving the mouse updates the snap at once.
+["keydown", "keyup"].forEach(type => addEventListener(type, ev => {
+  if (ev.key === "Shift" && lastPointerX != null) onTimeline(lastPointerX, type === "keydown");
+}));
 new ResizeObserver(([e]) => $("fill").style.setProperty("--full", e.contentRect.width + "px")).observe($("timeline"));
 
 // --- Volume: target set instantly, mpv's volume glides there (no clicks or jumps).
@@ -558,7 +589,7 @@ function toast(msg) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 1800);
 }
 
-// Editor: I / O mark the selection (mpv's A-B loop previews it), Ctrl+E exports it.
+// Editor: B / N mark the selection (mpv's A-B loop previews it), Ctrl+E exports it.
 const markIn = () => { cmd("set", "ab-loop-a", num("time-pos")); toast("Début de l'extrait : " + fmt(num("time-pos"))); };
 const markOut = () => { cmd("set", "ab-loop-b", num("time-pos")); toast("Fin de l'extrait : " + fmt(num("time-pos"))); };
 const clearSel = () => { cmd("set", "ab-loop-a", "no"); cmd("set", "ab-loop-b", "no"); toast("Sélection effacée"); };
@@ -572,10 +603,11 @@ $("menu").addEventListener("click", ev => {
   closeAll(); actions[act]?.();
 });
 
-// --- Tooltips: 500 ms delay the first time, then they travel between buttons; gone at once on leave.
+// --- Tooltips: 500 ms delay the first time, then the next ones pop right away; gone at once on leave.
 let tipTimer, tipWarm = false, coolTimer;
 function showTip(btn) {
   const b = btn.getBoundingClientRect(), tip = $("tip");
+  tip.classList.remove("show"); void tip.offsetWidth; // restart the pop for every button
   tip.textContent = btn.dataset.tip;
   tip.style.left = Math.max(40, Math.min(b.left + b.width / 2, innerWidth - 60)) + "px";
   tip.style.top = (b.top - 34) + "px";
@@ -632,8 +664,8 @@ addEventListener("keydown", ev => {
   else if (k === "t" && !$("alphaBtn").hidden) $("alphaBtn").onclick();
   else if (k === "l") { cmd("set", "loop-file", st["loop-file"] === "inf" ? "no" : "inf"); toast(st["loop-file"] === "inf" ? "Boucle désactivée" : "Lecture en boucle"); }
   else if (k === "s") $("subsBtn").click();
-  else if (k === "i") markIn();
-  else if (k === "o") markOut();
+  else if (k === "b") markIn();
+  else if (k === "n") markOut();
   else if (k === "q") actions.quit();
 });
 
