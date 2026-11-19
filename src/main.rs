@@ -117,6 +117,11 @@ impl Mpv {
 /// WAV markers -> temporary FFmetadata file -> chapters for this file only (shown on the timeline).
 fn load_markers(m: &Mpv) {
     let Some(path) = m.get("path") else { return };
+    let lower = path.to_ascii_lowercase();
+    if (lower.ends_with(".webm") || lower.ends_with(".mkv")) && webm_has_alpha(Path::new(&path)) {
+        // Transparent WebM: FFmpeg's own VP8/VP9 decoders drop the alpha plane, libvpx keeps it.
+        m.set("file-local-options/vd", "libvpx-vp9,libvpx,");
+    }
     if !markers::is_wav(&path) {
         return;
     }
@@ -128,6 +133,14 @@ fn load_markers(m: &Mpv) {
     if std::fs::write(&file, markers::to_ffmetadata(&found)).is_ok() {
         m.set("file-local-options/chapters-file", &file.to_string_lossy());
     }
+}
+
+/// Matroska/WebM track with AlphaMode = 1 (element 0x53C0), found in the file's header.
+fn webm_has_alpha(path: &Path) -> bool {
+    use std::io::Read;
+    let mut head = vec![0u8; 1 << 20];
+    let n = std::fs::File::open(path).and_then(|mut f| f.read(&mut head)).unwrap_or(0);
+    head[..n].windows(4).any(|w| w == [0x53, 0xC0, 0x81, 0x01])
 }
 
 /// True when the current video carries transparency (ProRes 4444, PNG, QuickTime Animation…).
@@ -227,9 +240,13 @@ fn tag_name(json: &str) -> Option<&str> {
 }
 
 /// Background check at startup: if GitHub has a newer release, offer to open its page.
-fn check_for_update() {
+/// Asks GitHub for the latest release, in the background.
+/// At startup (`manual` false): a newer version opens the prompt, unless "Ne plus demander" was
+/// ticked, in which case only the discreet update button lights up.
+/// From that button (`manual` true): always answers, with the prompt or a toast.
+fn check_for_update(manual: bool) {
     use std::os::windows::process::CommandExt;
-    thread::spawn(|| {
+    thread::spawn(move || {
         // curl.exe ships with Windows 10+; CREATE_NO_WINDOW keeps it invisible. Offline = silent.
         let Ok(out) = std::process::Command::new("curl.exe")
             .args(["-s", "-m", "5", "-H", "Accept: application/vnd.github+json"])
@@ -237,21 +254,56 @@ fn check_for_update() {
             .creation_flags(0x0800_0000)
             .output()
         else {
+            if manual {
+                app::toast("Impossible de vérifier les mises à jour");
+            }
             return;
         };
         let body = String::from_utf8_lossy(&out.stdout);
-        let Some(tag) = tag_name(&body) else { return };
+        let Some(tag) = tag_name(&body) else {
+            if manual {
+                app::toast("Impossible de vérifier les mises à jour (hors ligne ?)");
+            }
+            return;
+        };
         if parse_version(tag) <= parse_version(env!("CARGO_PKG_VERSION")) {
+            if manual {
+                app::toast(&format!("Visiblement est à jour ({})", env!("CARGO_PKG_VERSION")));
+            }
             return;
         }
-        let msg = format!(
-            "Une nouvelle version de {APP} est disponible : {tag}\n(version installée : {})\n\nOuvrir la page de téléchargement ?",
-            env!("CARGO_PKG_VERSION")
-        );
-        if win::ask(&msg, APP) {
-            win::open_url(&format!("https://github.com/{REPO}/releases/latest"));
-        }
+        app::offer_update(tag, manual || !never_ask_update());
     });
+}
+
+/// Settings kept across launches: %APPDATA%\Visiblement\settings.json.
+fn settings_path() -> Option<PathBuf> {
+    std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join(APP).join("settings.json"))
+}
+
+fn read_settings() -> serde_json::Map<String, serde_json::Value> {
+    settings_path()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+fn never_ask_update() -> bool {
+    read_settings().get("never_ask_update").and_then(serde_json::Value::as_bool).unwrap_or(false)
+}
+
+fn set_never_ask_update(never: bool) {
+    let Some(path) = settings_path() else { return };
+    let mut settings = read_settings();
+    settings.insert("never_ask_update".into(), never.into());
+    if let Some(dir) = path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(path, serde_json::Value::Object(settings).to_string());
+}
+
+fn open_release_page() {
+    win::open_url(&format!("https://github.com/{REPO}/releases/latest"));
 }
 
 fn exe_dir() -> PathBuf {
@@ -314,13 +366,6 @@ mod win {
         fn ShellExecuteW(hwnd: Hwnd, op: *const u16, file: *const u16, params: *const u16, dir: *const u16, show: i32) -> *mut c_void;
     }
 
-    /// Yes / No question in front of the player. True on Yes.
-    pub fn ask(text: &str, caption: &str) -> bool {
-        // MB_YESNO | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST; IDYES = 6.
-        let flags = 0x4 | 0x40 | 0x1_0000 | 0x4_0000;
-        // SAFETY: NUL-terminated UTF-16 buffers that live for the call.
-        unsafe { MessageBoxW(null_mut(), wide(text).as_ptr(), wide(caption).as_ptr(), flags) == 6 }
-    }
 
     /// Opens a URL in the default browser.
     pub fn open_url(url: &str) {
@@ -382,6 +427,33 @@ mod tests {
         assert!(info.contains("prores") && info.contains("yuva444p"), "{info}");
         let secs: f64 = info.lines().last().unwrap().trim().parse().unwrap();
         assert!((secs - 2.0).abs() < 0.1, "{secs}");
+    }
+
+    /// Needs target/release/libmpv-2.dll: cargo test --release -- --ignored
+    #[test]
+    #[ignore]
+    fn checkerboard_toggles_in_mpv() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release");
+        let (_lib, api) = load_mpv(&dir).expect("libmpv-2.dll in target/release");
+        let h = unsafe { (api.create)() };
+        let m = Mpv { h, ..api };
+        m.option("vo", "null");
+        m.option("background", "color");
+        assert!(unsafe { (m.initialize)(h) } >= 0);
+        m.set("background", "tiles");
+        assert_eq!(m.get("background").as_deref(), Some("tiles"));
+        m.set("background", "color");
+        assert_eq!(m.get("background").as_deref(), Some("color"));
+        unsafe { (m.destroy)(h) };
+    }
+
+    #[test]
+    fn webm_alpha_flag_detection() {
+        let tmp = std::env::temp_dir().join("visiblement-alpha-test.webm");
+        std::fs::write(&tmp, [0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x53, 0xC0, 0x81, 0x01, 0x00]).unwrap();
+        assert!(webm_has_alpha(&tmp));
+        std::fs::write(&tmp, [0x1A, 0x45, 0xDF, 0xA3, 0x00, 0x53, 0xC0, 0x81, 0x00]).unwrap();
+        assert!(!webm_has_alpha(&tmp));
     }
 
     #[test]

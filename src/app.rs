@@ -45,6 +45,8 @@ pub enum UserEvent {
     Toast(String),
     Ipc(String),
     Drag(&'static str, Vec<PathBuf>),
+    /// A newer release exists (tag); `prompt` opens the dialog, otherwise only the button lights up.
+    Update(String, bool),
     Quit,
 }
 
@@ -58,6 +60,11 @@ fn send(ev: UserEvent) {
     {
         let _ = p.send_event(ev);
     }
+}
+
+/// Shows the update prompt in the UI (now, or as soon as the page is ready).
+pub fn offer_update(tag: &str, prompt: bool) {
+    send(UserEvent::Update(tag.to_string(), prompt));
 }
 
 /// Toast in the web UI, from any thread.
@@ -299,7 +306,7 @@ pub fn run() -> Result<(), String> {
         .build(&ui)
         .map_err(|e| format!("Interface impossible à charger (WebView2) : {e}"))?;
 
-    crate::check_for_update();
+    crate::check_for_update(false);
     // Every argument is a file (or URL) to play: also covers "Open with" and drag & drop onto the .exe.
     let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     load_paths(&m, &args);
@@ -309,6 +316,11 @@ pub fn run() -> Result<(), String> {
     let mut events = Some(events);
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     let mut grab: Option<Grab> = None;
+    let (mut ui_ready, mut update_offer): (bool, Option<(String, bool)>) = (false, None);
+    let show_update = |webview: &WebView, tag: &str, prompt: bool| {
+        let info = json!({ "latest": tag, "current": env!("CARGO_PKG_VERSION"), "prompt": prompt });
+        eval(webview, &format!("window.vb && vb.updateAvailable({info})"));
+    };
 
     event_loop.run(move |event, _, flow| {
         *flow = flush_at.map_or(ControlFlow::Wait, ControlFlow::WaitUntil);
@@ -332,6 +344,12 @@ pub fn run() -> Result<(), String> {
                 UserEvent::Loading(on) => eval(&webview, &format!("window.vb && vb.loading({on})")),
                 UserEvent::VideoSize(w, h) => fit_to_video(&ui, w, h),
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
+                UserEvent::Update(tag, prompt) => {
+                    if ui_ready {
+                        show_update(&webview, &tag, prompt);
+                    }
+                    update_offer = Some((tag, prompt));
+                }
                 UserEvent::Drag(kind, paths) => {
                     eval(&webview, &format!("window.vb && vb.drag({})", json!(kind == "enter")));
                     if kind == "drop" && !paths.is_empty() {
@@ -343,6 +361,11 @@ pub fn run() -> Result<(), String> {
                     let s = |k: &str| msg.get(k).and_then(Value::as_str).unwrap_or("").to_string();
                     match s("t").as_str() {
                         "ready" => {
+                            ui_ready = true;
+                            if let Some((tag, prompt)) = &update_offer {
+                                show_update(&webview, tag, *prompt);
+                            }
+                            eval(&webview, &format!("window.vb && vb.version({})", json!(env!("CARGO_PKG_VERSION"))));
                             let mut all = Map::new();
                             for p in OBSERVED {
                                 all.insert(p.to_string(), m.get(p).map_or(Value::Null, Value::String));
@@ -400,6 +423,16 @@ pub fn run() -> Result<(), String> {
                             }
                             _ => {}
                         },
+                        "check-update" => crate::check_for_update(true),
+                        "update" => {
+                            update_offer = None;
+                            if msg["never"].as_bool() == Some(true) {
+                                crate::set_never_ask_update(true);
+                            }
+                            if msg["download"].as_bool() == Some(true) {
+                                crate::open_release_page();
+                            }
+                        }
                         "save-frame" => workers.push(save_frame(m)),
                         "copy-frame" => workers.push(copy_frame(m)),
                         "export" => workers.push(crate::editor::export(m)),

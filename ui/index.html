@@ -67,6 +67,15 @@
   .mascot { width: min(50vmin, 320px); }
   .hint { position: absolute; bottom: 14%; width: 100%; text-align: center; color: var(--muted); display: none; }
   .stage.idle .hint { display: block; }
+  /* Discreet version / update button, bottom-right of the idle screen */
+  .upd { all: unset; position: absolute; right: 14px; bottom: 12px; display: none; align-items: center; gap: 7px;
+    padding: 5px 10px; border-radius: 999px; font-size: 12px; color: rgba(244, 242, 250, .42); cursor: pointer;
+    transition: color .15s, background .15s; }
+  .stage.idle .upd { display: inline-flex; }
+  .upd:hover { color: var(--fg); background: rgba(255, 255, 255, .07); }
+  .upd .dot { width: 6px; height: 6px; border-radius: 50%; background: #9df5b4; display: none; }
+  .upd.available { color: rgba(244, 242, 250, .75); }
+  .upd.available .dot { display: block; }
 
   /* Controls */
   .controls { position: absolute; inset: auto 0 0 0; padding: 28px 16px 12px; transition: opacity .25s; z-index: 2; }
@@ -179,6 +188,36 @@
   .loader.show { opacity: 1; }
   .loader i { width: 5px; height: 5px; border-radius: 1px; background: var(--fg); }
 
+  /* Update prompt: transitions.dev-style modal (fade + scale), over a blurred, dimmed stage */
+  .modal-back { position: fixed; inset: var(--titlebar) 0 0 0; z-index: 45; display: grid; place-items: center;
+    background: rgba(17, 16, 20, .5); backdrop-filter: blur(10px); opacity: 0; visibility: hidden;
+    transition: opacity .18s, visibility 0s .18s; }
+  .modal-back.open { opacity: 1; visibility: visible; transition: opacity .22s var(--ease-out), visibility 0s; }
+  .modal { width: min(380px, calc(100vw - 32px)); padding: 22px 22px 18px; border-radius: 18px; text-align: center;
+    background: #1f1e23; border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0, 0, 0, .55);
+    transform: scale(.94) translateY(6px); opacity: 0; transition: transform .18s, opacity .18s; }
+  .modal-back.open .modal { transform: none; opacity: 1; transition: transform .32s var(--ease-out), opacity .22s; }
+  .modal .logo { width: 60px; height: 60px; margin: 0 auto 10px; display: block; }
+  .modal h2 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
+  .modal p { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+  .modal p b { color: var(--fg); font-weight: 600; }
+  .modal .never { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: var(--muted); cursor: pointer; }
+  /* Fixed-size box: checking it never changes the layout (no outline, the tick is drawn inside) */
+  .modal .never input { appearance: none; flex: none; box-sizing: border-box; width: 16px; height: 16px; margin: 0; padding: 0;
+    border-radius: 5px; border: 1.5px solid rgba(255, 255, 255, .35); outline: none; cursor: pointer; position: relative;
+    transition: background .15s, border-color .15s, box-shadow .15s; }
+  .modal .never input:focus-visible { box-shadow: 0 0 0 3px rgba(255, 255, 255, .18); }
+  .modal .never input:checked { background: var(--fg); border-color: var(--fg); }
+  .modal .never input::after { content: ""; position: absolute; left: 3.5px; top: 1.5px; width: 4px; height: 8px;
+    border: solid var(--bar); border-width: 0 2px 2px 0; rotate: 45deg; opacity: 0; transition: opacity .12s; }
+  .modal .never input:checked::after { opacity: 1; }
+  .modal .actions { display: flex; gap: 8px; }
+  .modal .actions button { all: unset; flex: 1; padding: 9px 0; border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer; text-align: center; }
+  .modal .actions .later { background: rgba(255, 255, 255, .08); }
+  .modal .actions .later:hover { background: rgba(255, 255, 255, .14); }
+  .modal .actions .go { background: var(--fg); color: var(--bar); }
+  .modal .actions .go:hover { background: #fff; }
+
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
@@ -204,6 +243,7 @@
         </g>
       </svg>
       <div class="hint">Glisse une vidéo ici · clic droit pour le menu</div>
+      <button class="upd" id="updBtn"><span class="dot"></span><span id="updText">Rechercher une mise à jour</span></button>
     </div>
 
     <div class="controls" id="controls">
@@ -263,6 +303,21 @@
     <div class="item" data-act="quit">Quitter <kbd>Q</kbd></div>
   </div>
   <div class="tip" id="tip"></div>
+  <div class="modal-back" id="updateBack">
+    <div class="modal" role="dialog" aria-labelledby="updateTitle">
+      <svg class="logo" viewBox="0 0 512 512" aria-hidden="true">
+        <image href="cloud.svg" width="512" height="512"/>
+        <g fill="#121114"><ellipse cx="226" cy="256" rx="21" ry="34"/><ellipse cx="286" cy="256" rx="21" ry="34"/></g>
+      </svg>
+      <h2 id="updateTitle">Nouvelle version disponible</h2>
+      <p id="updateText"></p>
+      <label class="never"><input type="checkbox" id="updateNever"> Ne plus demander</label>
+      <div class="actions">
+        <button class="later" id="updateLater">Plus tard</button>
+        <button class="go" id="updateGo">Télécharger</button>
+      </div>
+    </div>
+  </div>
   <div class="edge"></div>
   <div class="grip n" data-dir="n"></div><div class="grip s" data-dir="s"></div>
   <div class="grip e" data-dir="e"></div><div class="grip w" data-dir="w"></div>
@@ -304,6 +359,16 @@ window.vb = {
   loading(on) { on ? startLoading() : stopLoading(); },
   toast: msg => toast(msg),
   drag(on) { stage.classList.toggle("dragging", on); },
+  // Startup check found a newer GitHub release (src/main.rs check_for_update).
+  // prompt false: "Ne plus demander" was ticked, so only the discreet button lights up.
+  updateAvailable({ latest, current, prompt }) {
+    const v = latest.replace(/^v/, "");
+    $("updateText").innerHTML = `Visiblement <b>${v}</b> est prête. Tu as la version ${current}.`;
+    $("updBtn").classList.add("available");
+    $("updText").textContent = `Mise à jour ${v} disponible`;
+    if (prompt) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
+  },
+  version(v) { if (!$("updBtn").classList.contains("available")) $("updText").textContent = `Version ${v} · Rechercher une mise à jour`; },
   fullscreen(on) { win.classList.toggle("fullscreen", on); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
 };
 
@@ -659,7 +724,8 @@ function moveGrab(ev) {
 }
 function endGrab() { if (grabbing) { grabbing = null; send({ t: "win", a: "grab-end" }); } }
 $("titlebar").addEventListener("pointerdown", ev => {
-  if (ev.button === 0 && !ev.target.closest(".wbtn") && ev.detail === 1) startGrab(ev, "");
+  // (pointerdown has no click count: detail is always 0, so no filter on it)
+  if (ev.button === 0 && !ev.target.closest(".wbtn")) startGrab(ev, "");
 });
 $("titlebar").addEventListener("pointermove", moveGrab);
 $("titlebar").addEventListener("pointerup", endGrab);
@@ -714,6 +780,19 @@ addEventListener("mousemove", () => {
   hideTimer = setTimeout(hideUi, 3000);
 });
 document.documentElement.addEventListener("mouseleave", () => { clearTimeout(hideTimer); hideUi(); });
+
+// Update prompt buttons. "Ne plus demander" is remembered by the Rust side (settings.json).
+function closeUpdate(download) {
+  send({ t: "update", download, never: $("updateNever").checked });
+  $("updateBack").classList.remove("open");
+}
+$("updateGo").onclick = () => closeUpdate(true);
+// The discreet button: shows the prompt again if an update is known, otherwise checks now.
+$("updBtn").onclick = () => {
+  if ($("updBtn").classList.contains("available")) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
+  else { $("updText").textContent = "Recherche…"; send({ t: "check-update" }); }
+};
+$("updateLater").onclick = () => closeUpdate(false);
 
 send({ t: "ready" });
 </script>
