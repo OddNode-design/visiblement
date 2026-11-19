@@ -3,3 +3,5 @@
 *.zip
 /preview
 /.impeccable
+*.msi
+*.wixpdb

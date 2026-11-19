@@ -1,0 +1,91 @@
+<!--
+  Visiblement installer (WiX Toolset 5).
+  Per-user install in %LocalAppData%\Programs\Visiblement: no admin rights, and a newer .msi
+  replaces the old one in place (MajorUpgrade, same UpgradeCode forever).
+
+  wix build installer\visiblement.wxs -arch x64 -d Version=0.1.0 -d BinDir=target\release -d UiDir=ui -o Visiblement-0.1.0-x64.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Visiblement" Manufacturer="OddNode-design" Version="$(Version)"
+           UpgradeCode="700cff8f-c032-46fe-9d00-0da7912df0f6" Scope="perUser" Language="1036" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="Une version plus récente de Visiblement est déjà installée." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="AppIcon" SourceFile="assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/OddNode-design/visiblement" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Visiblement">
+          <Directory Id="UIFOLDER" Name="ui" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="Visiblement">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="Integration" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component Id="Exe"><File Id="VisiblementExe" Source="$(BinDir)\visiblement.exe" /></Component>
+      <Component Id="Mpv"><File Source="$(BinDir)\libmpv-2.dll" /></Component>
+      <Component Id="Readme"><File Source="README.md" /></Component>
+      <Component Id="License"><File Source="LICENSE" /></Component>
+      <Component Id="Folders">
+        <RegistryValue Root="HKCU" Key="Software\OddNode-design\Visiblement" Name="installed" Value="1" Type="integer" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
+      </Component>
+      <Component Id="UiFolder" Directory="UIFOLDER">
+        <RegistryValue Root="HKCU" Key="Software\OddNode-design\Visiblement" Name="ui" Value="1" Type="integer" KeyPath="yes" />
+        <RemoveFolder Id="RemoveUiIcons" Directory="UIICONS" On="uninstall" />
+        <RemoveFolder Id="RemoveUiFolder" On="uninstall" />
+      </Component>
+      <Files Directory="UIFOLDER" Include="$(UiDir)\**">
+      </Files>
+    </ComponentGroup>
+    <DirectoryRef Id="UIFOLDER">
+      <Directory Id="UIICONS" Name="icons" />
+    </DirectoryRef>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="Integration" Directory="INSTALLFOLDER">
+      <!-- Start menu shortcut -->
+      <Component Id="StartMenu" Directory="ProgramMenuFolder">
+        <Shortcut Id="StartMenuShortcut" Name="Visiblement" Target="[INSTALLFOLDER]visiblement.exe"
+                  WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\OddNode-design\Visiblement" Name="shortcut" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+
+      <!-- "Ouvrir avec" for video, image and audio files (the default app is left to the user). -->
+      <Component Id="OpenWith">
+        <RegistryValue Root="HKCU" Key="Software\Classes\Visiblement.Media" Value="Média (Visiblement)" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Visiblement.Media\DefaultIcon" Value="&quot;[INSTALLFOLDER]visiblement.exe&quot;,0" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Visiblement.Media\shell\open\command" Value="&quot;[INSTALLFOLDER]visiblement.exe&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Applications\visiblement.exe" Name="FriendlyAppName" Value="Visiblement" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Applications\visiblement.exe\shell\open\command" Value="&quot;[INSTALLFOLDER]visiblement.exe&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mp4\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mov\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mkv\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.webm\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.avi\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.m4v\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mxf\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.gif\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.webp\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.apng\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.wav\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mp3\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.flac\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.m4a\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+      </Component>
+    </ComponentGroup>
+  </Fragment>
+</Wix>

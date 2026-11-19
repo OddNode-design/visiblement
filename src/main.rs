@@ -119,7 +119,9 @@ fn load_markers(m: &Mpv) {
     let Some(path) = m.get("path") else { return };
     let lower = path.to_ascii_lowercase();
     if (lower.ends_with(".webm") || lower.ends_with(".mkv")) && webm_has_alpha(Path::new(&path)) {
-        // Transparent WebM: FFmpeg's own VP8/VP9 decoders drop the alpha plane, libvpx keeps it.
+        // Transparent WebM: GPU decoding and FFmpeg's own VP8/VP9 decoders drop the alpha plane;
+        // libvpx (software) keeps it.
+        m.set("file-local-options/hwdec", "no");
         m.set("file-local-options/vd", "libvpx-vp9,libvpx,");
     }
     if !markers::is_wav(&path) {
