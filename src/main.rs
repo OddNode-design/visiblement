@@ -135,6 +135,14 @@ struct Idle {
     blink_until: Instant,
     next_blink: Instant,
     last_eyes: Vec<i64>,
+    // Gaze: a spring (pos, vel) chases the target, in logo units from the eyes' rest position.
+    gaze: (f64, f64),
+    pos: (f64, f64),
+    vel: (f64, f64),
+    mouse: (f64, f64),
+    last_move: Instant,
+    next_glance: Instant,
+    last_step: Instant,
 }
 
 impl Idle {
@@ -151,6 +159,13 @@ impl Idle {
             blink_until: now,
             next_blink: now + Duration::from_secs(2),
             last_eyes: Vec::new(),
+            gaze: (256.0, 256.0),
+            pos: (0.0, 0.0),
+            vel: (0.0, 0.0),
+            mouse: (-1.0, -1.0),
+            last_move: now,
+            next_glance: now,
+            last_step: now,
         }
     }
 
@@ -199,19 +214,40 @@ impl Idle {
             self.next_blink = now + Duration::from_millis(2500 + jitter_ms(3500));
         }
         let ry = if now < self.blink_until { 4.0 } else { EYE_RY };
-        // Mouse in logo space; when it is outside the window, look straight ahead.
-        let (mx, my) = if m.get("mouse-pos/hover").as_deref() == Some("yes") {
-            ((m.num("mouse-pos/x") - self.x) / self.scale, (m.num("mouse-pos/y") - self.y) / self.scale)
-        } else {
-            (256.0, 256.0)
-        };
-        let s = self.scale;
+        // Follow the mouse while it moves; once it rests, glance around on its own.
+        if m.get("mouse-pos/hover").as_deref() == Some("yes") {
+            let mouse = (m.num("mouse-pos/x"), m.num("mouse-pos/y"));
+            if mouse != self.mouse {
+                self.mouse = mouse;
+                self.gaze = ((mouse.0 - self.x) / self.scale, (mouse.1 - self.y) / self.scale);
+                self.last_move = now;
+            }
+        }
+        if now - self.last_move > Duration::from_millis(2500) && now >= self.next_glance {
+            let angle = jitter_ms(6283) as f64 / 1000.0;
+            let dist = 120.0 + jitter_ms(400) as f64;
+            self.gaze = if jitter_ms(4) == 0 {
+                (256.0, 256.0)
+            } else {
+                (256.0 + angle.cos() * dist, 256.0 + angle.sin() * dist * 0.7)
+            };
+            self.next_glance = now + Duration::from_millis(900 + jitter_ms(2200));
+        }
+        // Spring step at ~60 Hz: slight overshoot reads as alive.
+        if now - self.last_step >= Duration::from_millis(14) {
+            self.last_step = now;
+            let target = gaze_offset(self.gaze.0 - 256.0, self.gaze.1 - 256.0);
+            self.vel.0 = (self.vel.0 + (target.0 - self.pos.0) * 0.14) * 0.74;
+            self.vel.1 = (self.vel.1 + (target.1 - self.pos.1) * 0.14) * 0.74;
+            self.pos.0 += self.vel.0;
+            self.pos.1 += self.vel.1;
+        }
+        let (s, (ox, oy)) = (self.scale, self.pos);
         let rects: Vec<i64> = EYES
             .iter()
             .flat_map(|&(cx, cy)| {
-                let (dx, dy) = eye_offset(mx - cx, my - cy);
                 let (dw, dh) = ((2.0 * EYE_RX * s).max(1.0), (2.0 * ry * s).max(1.0));
-                let (ex, ey) = (self.x + (cx + dx) * s - dw / 2.0, self.y + (cy + dy) * s - dh / 2.0);
+                let (ex, ey) = (self.x + (cx + ox) * s - dw / 2.0, self.y + (cy + oy) * s - dh / 2.0);
                 [ex, ey, dw, dh].map(|v| v.round() as i64)
             })
             .collect();
@@ -230,10 +266,10 @@ impl Idle {
     }
 }
 
-/// How far an eye looks toward a point (dx, dy) away: up to 26 logo units.
-fn eye_offset(dx: f64, dy: f64) -> (f64, f64) {
+/// How far the eyes move toward a point (dx, dy) away from them: up to 44 logo units.
+fn gaze_offset(dx: f64, dy: f64) -> (f64, f64) {
     let d = dx.hypot(dy).max(1.0);
-    let k = (d / 4.0).min(26.0) / d;
+    let k = (d / 3.0).min(44.0) / d;
     (dx * k, dy * k)
 }
 
@@ -412,8 +448,8 @@ fn run() -> Result<(), String> {
     let mut workers = Vec::new();
     let mut icon_set = false;
     loop {
-        // While the logo is on screen, wake up regularly so it can blink.
-        let timeout = if idle.shown { 0.04 } else { -1.0 };
+        // While the logo is on screen, wake up at ~60 Hz to animate the eyes.
+        let timeout = if idle.shown { 0.016 } else { -1.0 };
         // SAFETY: mpv_wait_event never returns NULL; the event lives until the next call.
         let ev = unsafe { &*wait_event(h, timeout) };
         if !icon_set {
@@ -565,11 +601,11 @@ mod tests {
 
     #[test]
     fn eyes_look_toward_the_mouse_but_stay_in_place() {
-        let (dx, dy) = eye_offset(1000.0, 0.0);
-        assert!((dx - 26.0).abs() < 1e-9 && dy.abs() < 1e-9);
-        let (dx, _) = eye_offset(8.0, 0.0);
-        assert!((dx - 2.0).abs() < 1e-9);
-        assert_eq!(eye_offset(0.0, 0.0), (0.0, 0.0));
+        let (dx, dy) = gaze_offset(1000.0, 0.0);
+        assert!((dx - 44.0).abs() < 1e-9 && dy.abs() < 1e-9);
+        let (dx, _) = gaze_offset(9.0, 0.0);
+        assert!((dx - 3.0).abs() < 1e-9);
+        assert_eq!(gaze_offset(0.0, 0.0), (0.0, 0.0));
     }
 
     #[test]
