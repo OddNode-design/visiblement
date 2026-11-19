@@ -66,21 +66,21 @@
   .stage.idle .mascot-screen, .stage.audio .mascot-screen { display: grid; }
   .mascot { width: min(50vmin, 320px); position: relative; z-index: 1; }
   /* Audio playing: a fluid gradient of the logo colours behind the cloud. Five soft blobs drift on
-     their own orbits and blend into each other, inside a round, feathered area; paused, they freeze and dim. */
+     their own orbits and blend into each other, inside a round, feathered area; paused, it fades out. */
   .aura { position: absolute; left: 50%; top: 50%; width: min(68vmin, 440px); aspect-ratio: 1; translate: -50% -50%;
-    display: none; pointer-events: none; opacity: .2; filter: blur(22px) saturate(1.25);
+    display: none; pointer-events: none; opacity: 0; filter: blur(26px);
     -webkit-mask: radial-gradient(closest-side, #000 55%, transparent); mask: radial-gradient(closest-side, #000 55%, transparent);
     transition: opacity .8s var(--ease-out); }
   .stage.audio .aura { display: block; }
-  .stage.audio.playing .aura { opacity: .8; }
+  .stage.audio.playing .aura { opacity: .7; }
   .aura i { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%; mix-blend-mode: screen;
     animation: var(--path) var(--t) ease-in-out infinite alternate; animation-play-state: paused; }
   .stage.audio.playing .aura i { animation-play-state: running; }
-  .aura i:nth-child(1) { background: radial-gradient(closest-side, #ff8fc8, transparent); left: 0; top: 4%; --path: blob-a; --t: 5.3s; }
-  .aura i:nth-child(2) { background: radial-gradient(closest-side, #ffd98a, transparent); right: 0; top: 0; --path: blob-b; --t: 6.1s; }
-  .aura i:nth-child(3) { background: radial-gradient(closest-side, #9df5b4, transparent); left: 14%; bottom: 0; --path: blob-c; --t: 4.7s; }
-  .aura i:nth-child(4) { background: radial-gradient(closest-side, #7fdcff, transparent); right: 4%; bottom: 6%; --path: blob-d; --t: 5.9s; }
-  .aura i:nth-child(5) { background: radial-gradient(closest-side, #a78bff, transparent); left: 19%; top: 19%; --path: blob-e; --t: 3.9s; }
+  .aura i:nth-child(1) { background: radial-gradient(closest-side, #ecc6dc, transparent); left: 0; top: 4%; --path: blob-a; --t: 5.3s; }
+  .aura i:nth-child(2) { background: radial-gradient(closest-side, #eed9cc, transparent); right: 0; top: 0; --path: blob-b; --t: 6.1s; }
+  .aura i:nth-child(3) { background: radial-gradient(closest-side, #d3e6dc, transparent); left: 14%; bottom: 0; --path: blob-c; --t: 4.7s; }
+  .aura i:nth-child(4) { background: radial-gradient(closest-side, #cbdcec, transparent); right: 4%; bottom: 6%; --path: blob-d; --t: 5.9s; }
+  .aura i:nth-child(5) { background: radial-gradient(closest-side, #d8cfee, transparent); left: 19%; top: 19%; --path: blob-e; --t: 3.9s; }
   @keyframes blob-a { 33% { translate: 28% 16% ; scale: 1.15; } 66% { translate: 8% 40%; scale: .85; } to { translate: 36% -6%; } }
   @keyframes blob-b { 30% { translate: -30% 22%; scale: .9; } 70% { translate: -12% 46%; scale: 1.2; } to { translate: -40% 4%; } }
   @keyframes blob-c { 40% { translate: 30% -30%; scale: 1.2; } 75% { translate: 46% -6%; scale: .9; } to { translate: 6% -44%; } }
