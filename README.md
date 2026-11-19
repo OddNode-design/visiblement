@@ -11,10 +11,10 @@
 - **Marqueurs audio** : les marqueurs d'un WAV (cue points, marqueurs After Effects / Premiere / Audition) apparaissent sur la barre de lecture, avec leur nom au survol.
 - **Mini éditeur** : `I` / `O` pour le début et la fin, `Ctrl+E` pour enregistrer l'extrait (même format que l'original : WAV 24 bits, ProRes 4444 avec alpha, H.264…).
 - **Le dossier en playlist** : précédent / suivant passent aux autres vidéos du même dossier.
-- **Frame par frame** : numéro de frame dans la barre du haut, `,` et `.` pour reculer / avancer d'une image.
+- **Frame par frame** : numéro de frame affiché, boutons ‹ › ou touches `,` et `.` pour reculer / avancer d'une image.
 - **Clic droit** : enregistrer la frame affichée (PNG, JPG, WebP) ou la copier dans le presse-papiers.
 - **Mises à jour** : au lancement, une fenêtre propose la nouvelle version si elle existe.
-- **Rien à installer** : un dossier à dézipper.
+- **Rien à installer** : un dossier à dézipper (WebView2, qui affiche l'interface, est déjà présent sur Windows 10 et 11).
 
 ## Installation
 
@@ -32,7 +32,8 @@
 | Page préc. / Page suiv. | Vidéo précédente / suivante du dossier |
 | ↑ / ↓ ou molette | Volume |
 | M | Muet |
-| F ou double-clic | Plein écran |
+| Clic sur l'image | Lecture / pause |
+| F ou double-clic | Plein écran (Échap pour sortir) |
 | S | Sous-titres |
 | L | Lire en boucle |
 | T | Damier de transparence (vidéos alpha) |
@@ -42,7 +43,6 @@
 | Ctrl+O | Ouvrir un fichier |
 | Ctrl+S | Enregistrer la frame sous… |
 | Ctrl+C | Copier la frame |
-| K | Tous les raccourcis |
 | Q | Quitter |
 
 ## Dépannage
@@ -62,10 +62,13 @@ cargo build --release
 À côté de `target\release\visiblement.exe`, copier :
 
 - `libmpv-2.dll`, tirée de l'archive `mpv-dev-x86_64-*.7z` des [builds shinchiro](https://github.com/shinchiro/mpv-winbuild-cmake/releases) (chargée à l'exécution, aucune bibliothèque n'est nécessaire pour compiler) ;
-- le dossier `portable_config` de ce dépôt (interface, menu, logo).
+- le dossier `ui` de ce dépôt : l'interface (HTML/CSS/JS), modifiable sans recompiler.
+
+mpv dessine la vidéo dans une fenêtre ; l'interface est une page web affichée par WebView2 dans une fenêtre transparente posée dessus, qui pilote mpv (voir `src/app.rs`).
 
 ## Crédits et licences
 
 - Code de Visiblement : MIT.
 - [mpv / libmpv](https://mpv.io) : GPLv2+ (`libmpv-2.dll`, distribuée dans les releases).
-- [uosc](https://github.com/tomasklaen/uosc) : LGPL-2.1, interface incluse dans `portable_config/scripts/uosc`.
+- [wry / tao](https://github.com/tauri-apps) (MIT / Apache-2.0) pour la fenêtre et la WebView.
+- Icônes [Lucide](https://lucide.dev) (ISC).

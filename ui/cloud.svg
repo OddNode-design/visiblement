@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232226"/>
+      <stop offset="1" stop-color="#141316"/>
+    </linearGradient>
+    <!-- Holographic sheen: rainbow across, fading in from the top -->
+    <linearGradient id="rainbow" gradientUnits="userSpaceOnUse" x1="110" y1="0" x2="410" y2="0">
+      <stop offset="0" stop-color="#ff8fc8"/>
+      <stop offset=".25" stop-color="#ffd98a"/>
+      <stop offset=".5" stop-color="#9df5b4"/>
+      <stop offset=".75" stop-color="#7fdcff"/>
+      <stop offset="1" stop-color="#a78bff"/>
+    </linearGradient>
+    <linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="0" y1="150" x2="0" y2="420">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".45" stop-color="#fff" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="1"/>
+    </linearGradient>
+    <filter id="rim" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feFlood flood-color="#fff"/>
+      <feComposite in2="SourceAlpha" operator="out"/>
+      <feGaussianBlur stdDeviation="12"/>
+      <feComposite in2="SourceAlpha" operator="in"/>
+    </filter>
+    <mask id="fadeMask"><rect width="512" height="512" fill="url(#fade)"/></mask>
+    <filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <clipPath id="cloud">
+      <circle cx="256" cy="262" r="118"/>
+      <circle cx="256" cy="150" r="46"/><circle cx="335" cy="183" r="46"/><circle cx="368" cy="262" r="46"/>
+      <circle cx="335" cy="341" r="46"/><circle cx="256" cy="374" r="46"/><circle cx="177" cy="341" r="46"/>
+      <circle cx="144" cy="262" r="46"/><circle cx="177" cy="183" r="46"/>
+    </clipPath>
+  </defs>
+  <!-- Cloud creature -->
+  <g clip-path="url(#cloud)">
+    <rect width="512" height="512" fill="#f7f6fb"/>
+    <g mask="url(#fadeMask)" filter="url(#soft)">
+      <rect x="60" y="60" width="400" height="400" fill="url(#rainbow)"/>
+    </g>
+  </g>
+  <!-- Inner rim light: white glow just inside the edge -->
+  <g filter="url(#rim)">
+    <circle cx="256" cy="262" r="118"/>
+    <circle cx="256" cy="150" r="46"/><circle cx="335" cy="183" r="46"/><circle cx="368" cy="262" r="46"/>
+    <circle cx="335" cy="341" r="46"/><circle cx="256" cy="374" r="46"/><circle cx="177" cy="341" r="46"/>
+    <circle cx="144" cy="262" r="46"/><circle cx="177" cy="183" r="46"/>
+  </g>
+</svg>

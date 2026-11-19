@@ -1,0 +1,653 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Visiblement</title>
+<style>
+  :root {
+    --titlebar: 40px; /* must match TITLE_BAR in src/app.rs */
+    --bg: #1b1a1e; --bar: #141317; --fg: #f4f2fa; --muted: rgba(244, 242, 250, .6);
+    --panel: rgba(17, 16, 20, .88); --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
+    /* Logo colours washed out almost to white: a holographic hint, barely visible */
+    --holo: linear-gradient(90deg, #ffe4f2, #fff3dd 25%, #e5fbea 50%, #e2f5ff 75%, #ece6ff);
+    --ease-out: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  /* Transparent page: the video window shows through everywhere below the title bar */
+  html, body { margin: 0; height: 100%; background: transparent; color: var(--fg);
+    font: 14px/1.4 "Segoe UI", system-ui, sans-serif; overflow: hidden; user-select: none; }
+  .window { position: fixed; inset: 0; display: flex; flex-direction: column; }
+
+  /* Lucide icons, tinted with currentColor through a mask */
+  .ico { width: 20px; height: 20px; display: block; background: currentColor;
+    -webkit-mask: var(--src) center / contain no-repeat; mask: var(--src) center / contain no-repeat; }
+  /* transitions.dev "Icon swap": scale + blur */
+  .ico.swap { animation: icon-swap .22s var(--ease-out); }
+  @keyframes icon-swap { from { transform: scale(.55); filter: blur(4px); opacity: 0; } }
+
+  /* Dedicated title bar: its own strip, the video starts below it */
+  .titlebar { flex: none; height: var(--titlebar); display: flex; align-items: center; gap: 10px;
+    padding: 0 4px 0 12px; background: var(--bar); border-bottom: 1px solid rgba(255, 255, 255, .06);
+    border-radius: 10px 10px 0 0; }
+  .titlebar img { width: 22px; height: 22px; border-radius: 6px; pointer-events: none; }
+  .titlebar .title { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45vw; pointer-events: none; }
+  .titlebar .grow { flex: 1; align-self: stretch; }
+  .titlebar .pos { font-size: 12px; font-variant-numeric: tabular-nums; padding: 2px 8px; border-radius: 999px;
+    background: rgba(255, 255, 255, .1); pointer-events: none; }
+  .titlebar .pos:empty { display: none; }
+  .titlebar .wbtn { width: 44px; height: 32px; display: grid; place-items: center; border-radius: 8px; color: var(--fg); opacity: .8; }
+  .titlebar .wbtn:hover { background: var(--hover); opacity: 1; }
+  .titlebar .wbtn.close:hover { background: #c42b1c; }
+  .titlebar .wbtn .ico { width: 16px; height: 16px; }
+  .window.fullscreen .titlebar { display: none; }
+
+  /* Everything below the title bar sits over the video window */
+  .stage { position: relative; flex: 1; overflow: hidden; }
+  .stage.hide-ui { cursor: none; }
+
+  /* Thin edge around the window, like a framed hero image */
+  .edge { position: fixed; inset: 0; border-radius: 10px 10px 0 0; pointer-events: none; z-index: 40;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .09); }
+  .window.fullscreen .edge { display: none; }
+  /* Resize handles on the window edges */
+  .grip { position: fixed; z-index: 50; }
+  .grip.n { top: 0; left: 8px; right: 8px; height: 5px; cursor: n-resize; }
+  .grip.s { bottom: 0; left: 8px; right: 8px; height: 5px; cursor: s-resize; }
+  .grip.e { right: 0; top: 8px; bottom: 8px; width: 5px; cursor: e-resize; }
+  .grip.w { left: 0; top: 8px; bottom: 8px; width: 5px; cursor: w-resize; }
+  .grip.ne { top: 0; right: 0; width: 8px; height: 8px; cursor: ne-resize; }
+  .grip.nw { top: 0; left: 0; width: 8px; height: 8px; cursor: nw-resize; }
+  .grip.se { bottom: 0; right: 0; width: 8px; height: 8px; cursor: se-resize; }
+  .grip.sw { bottom: 0; left: 0; width: 8px; height: 8px; cursor: sw-resize; }
+  .window.fullscreen .grip, .window.maximized .grip { display: none; }
+
+  /* Idle screen and audio files: the cloud with living eyes */
+  .mascot-screen { position: absolute; inset: 0; display: none; place-items: center; }
+  .stage.idle .mascot-screen, .stage.audio .mascot-screen { display: grid; }
+  .mascot { width: min(50vmin, 320px); }
+  .hint { position: absolute; bottom: 14%; width: 100%; text-align: center; color: var(--muted); display: none; }
+  .stage.idle .hint { display: block; }
+
+  /* Controls */
+  .controls { position: absolute; inset: auto 0 0 0; padding: 28px 16px 10px;
+    background: linear-gradient(transparent, rgba(17, 16, 20, .72) 55%); transition: opacity .25s; z-index: 2; }
+  .stage.idle .controls { display: none; }
+  .stage.hide-ui .controls { opacity: 0; }
+  .stage.audio .controls { background: none; }
+
+  .timeline { position: relative; height: 16px; cursor: pointer; touch-action: none; }
+  .timeline .track { position: absolute; left: 0; right: 0; top: 6px; height: 3px; border-radius: 2px; background: var(--line);
+    transition: top .15s, height .15s; }
+  .timeline:hover .track, .timeline.scrubbing .track { top: 4px; height: 6px; }
+  .timeline .fill { height: 100%; width: 0; border-radius: inherit;
+    background-image: var(--holo); background-size: var(--full, 100vw) 100%; background-repeat: no-repeat; }
+  .timeline .sel { position: absolute; top: 2px; height: 10px; border-radius: 3px; background: rgba(255, 255, 255, .16);
+    border: 1px solid rgba(255, 255, 255, .5); pointer-events: none; display: none; }
+  .timeline .mark { position: absolute; top: 3px; width: 8px; height: 8px; margin-left: -4px; rotate: 45deg; border-radius: 1px;
+    background: var(--fg); opacity: .85; }
+  .timeline .mark:hover { opacity: 1; scale: 1.3; }
+  .timeline .hover-time { position: absolute; bottom: 20px; translate: -50% 0; padding: 3px 7px; border-radius: 6px;
+    background: var(--fg); color: var(--bar); font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none;
+    opacity: 0; transition: opacity .12s; font-variant-numeric: tabular-nums; }
+  .timeline:hover .hover-time, .timeline.scrubbing .hover-time { opacity: 1; }
+
+  .bar { display: flex; align-items: center; gap: 2px; margin-top: 2px; }
+  .bar button { all: unset; width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; cursor: pointer; color: var(--fg); }
+  .bar button:hover, .bar button.on { background: var(--hover); }
+  .bar button:active .ico { transform: scale(.88); }
+  .bar button[hidden] { display: none; }
+  .bar .ico { transition: transform .1s; }
+  .bar .gap { flex: 1; }
+  .bar .stat { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--muted); padding: 0 8px; white-space: nowrap; }
+  .bar .stat b { color: var(--fg); font-weight: 600; }
+
+  /* Volume: slider opens on hover, value glides */
+  .vol { display: flex; align-items: center; }
+  .vol .slider { width: 0; overflow: hidden; transition: width .2s var(--ease-out); display: flex; align-items: center; height: 38px; }
+  .vol:hover .slider, .vol.active .slider { width: 104px; }
+  /* The 12px knob is centred on the value: margins keep it clear of the icon and the clip edge */
+  .vol .rail { position: relative; width: 80px; height: 3px; margin: 0 14px 0 10px; flex: none; border-radius: 2px; background: var(--line); cursor: pointer; }
+  .vol .rail .level { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--fg); }
+  .vol .rail .knob { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--fg); }
+
+  /* Menus: transitions.dev "Menu dropdown", origin-aware open / close */
+  .menu { position: fixed; min-width: 230px; padding: 6px; background: var(--panel);
+    backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .5); z-index: 30;
+    visibility: hidden; opacity: 0; transform: scale(.94); filter: blur(2px);
+    transition: opacity .12s, transform .12s, filter .12s, visibility 0s .12s; }
+  .menu.open { visibility: visible; opacity: 1; transform: none; filter: none;
+    transition: opacity .18s var(--ease-out), transform .22s var(--ease-out), filter .18s, visibility 0s; }
+  .menu .head { padding: 6px 10px 4px; font-size: 12px; color: var(--muted); }
+  .menu .item { display: flex; justify-content: space-between; gap: 24px; padding: 7px 10px; border-radius: 8px; cursor: pointer; position: relative; }
+  .menu .item:hover { background: var(--hover); }
+  .menu .item.disabled { opacity: .4; pointer-events: none; }
+  .menu .item kbd, .menu .item .val { font: inherit; color: var(--muted); }
+  .menu .item.checked::after { content: "✓"; }
+  .menu .sep { height: 1px; margin: 5px 4px; background: var(--line); }
+  .menu .chips { display: flex; gap: 4px; padding: 2px 6px 6px; }
+  .menu .chips span { padding: 4px 10px; border-radius: 8px; cursor: pointer; font-variant-numeric: tabular-nums; }
+  .menu .chips span:hover { background: var(--hover); }
+  .menu .chips span.checked { background: var(--fg); color: var(--bar); font-weight: 600; }
+
+  /* transitions.dev "Toast": rises in with fade, blur and scale */
+  .toast { position: absolute; left: 50%; bottom: 96px; padding: 8px 14px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line); backdrop-filter: blur(14px); z-index: 20;
+    opacity: 0; transform: translate(-50%, 10px) scale(.95); filter: blur(4px);
+    transition: opacity .18s, transform .18s, filter .18s; pointer-events: none; white-space: nowrap; }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); filter: none;
+    transition: opacity .25s var(--ease-out), transform .3s var(--ease-out), filter .25s; }
+
+  /* transitions.dev "Tooltip": delayed in, travels between buttons, instant out */
+  .tip { position: fixed; padding: 4px 8px; border-radius: 8px; background: var(--fg); color: var(--bar);
+    font-size: 12px; font-weight: 600; white-space: nowrap; pointer-events: none; z-index: 35;
+    opacity: 0; transform: translate(-50%, 4px); }
+  .tip.show { opacity: 1; transform: translate(-50%, 0); transition: opacity .15s, transform .15s var(--ease-out), left .2s var(--ease-out); }
+
+  /* Dragging a file over the window: blur + small dotted target with a plus */
+  .drop { position: absolute; inset: 0; z-index: 25; display: grid; place-items: center; pointer-events: none;
+    background: rgba(27, 26, 30, .55); backdrop-filter: blur(16px) saturate(1.1);
+    opacity: 0; transition: opacity .18s var(--ease-out); }
+  .stage.dragging .drop { opacity: 1; }
+  .drop .target { position: relative; width: 72px; height: 72px; display: grid; place-items: center;
+    transform: scale(.85); transition: transform .3s var(--ease-out); }
+  .stage.dragging .drop .target { transform: none; }
+  /* Only the dotted ring turns; the plus stays still */
+  .drop .target::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px dashed rgba(244, 242, 250, .75); }
+  .stage.dragging .drop .target::before { animation: target-spin 8s linear infinite; }
+  .drop .target .ico { width: 24px; height: 24px; }
+  @keyframes target-spin { to { rotate: 360deg; } }
+
+  /* transitions.dev "Matrix dot loader": 5×5 dots pulsing through four patterns while a file opens */
+  .loader { position: absolute; left: 50%; top: 50%; z-index: 24; display: grid; grid-template-columns: repeat(5, 5px);
+    gap: 5px; translate: -50% -50%; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .loader.show { opacity: 1; }
+  .loader i { width: 5px; height: 5px; border-radius: 1px; background: var(--fg); }
+
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="window" id="win">
+  <div class="titlebar" id="titlebar">
+    <img src="icon.svg" alt="">
+    <span class="title" id="title">Visiblement</span>
+    <span class="grow"></span>
+    <span class="pos" id="pos"></span>
+    <span class="wbtn" id="wMin" title="Réduire"><i class="ico" data-i="minus"></i></span>
+    <span class="wbtn" id="wMax" title="Agrandir"><i class="ico" data-i="square"></i></span>
+    <span class="wbtn close" id="wClose" title="Fermer"><i class="ico" data-i="x"></i></span>
+  </div>
+
+  <div class="stage idle" id="stage">
+    <div class="mascot-screen">
+      <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement">
+        <image href="cloud.svg" width="512" height="512"/>
+        <g fill="#121114" id="eyes">
+          <ellipse class="eye" cx="226" cy="256" rx="21" ry="34"/>
+          <ellipse class="eye" cx="286" cy="256" rx="21" ry="34"/>
+        </g>
+      </svg>
+      <div class="hint">Glisse une vidéo ici · clic droit pour le menu</div>
+    </div>
+
+    <div class="controls" id="controls">
+      <div class="timeline" id="timeline">
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="sel" id="sel"></div>
+        <div id="marks"></div>
+        <div class="hover-time" id="hoverTime"></div>
+      </div>
+      <div class="bar">
+        <button id="prev" data-tip="Précédente (Page préc.)"><i class="ico" data-i="skip-back"></i></button>
+        <button id="stepBack" data-tip="Image précédente (,)"><i class="ico" data-i="chevron-left"></i></button>
+        <button id="play" data-tip="Lecture (Espace)"><i class="ico" id="playIcon" data-i="play"></i></button>
+        <button id="stepFwd" data-tip="Image suivante (.)"><i class="ico" data-i="chevron-right"></i></button>
+        <button id="next" data-tip="Suivante (Page suiv.)"><i class="ico" data-i="skip-forward"></i></button>
+        <div class="vol" id="vol">
+          <button id="mute" data-tip="Muet (M)"><i class="ico" id="volIcon" data-i="volume-2"></i></button>
+          <div class="slider"><div class="rail" id="rail"><div class="level" id="level"></div><div class="knob" id="knob"></div></div></div>
+        </div>
+        <span class="stat"><b id="time">0:00</b> / <span id="dur">0:00</span></span>
+        <span class="stat" id="frameStat">Frame <b id="frame">0</b> / <span id="frames">0</span></span>
+        <span class="gap"></span>
+        <button id="alphaBtn" data-tip="Damier de transparence (T)" hidden><i class="ico" id="alphaIcon" data-i="grid-2x2"></i></button>
+        <button id="subsBtn" data-tip="Sous-titres (S)"><i class="ico" data-i="captions"></i></button>
+        <button id="setBtn" data-tip="Paramètres"><i class="ico" data-i="settings"></i></button>
+        <button id="fs" data-tip="Plein écran (F)"><i class="ico" id="fsIcon" data-i="maximize"></i></button>
+      </div>
+    </div>
+
+    <div class="loader" id="loader"></div>
+    <div class="drop"><div class="target"><i class="ico" data-i="plus"></i></div></div>
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <div class="menu" id="subsMenu"></div>
+  <div class="menu" id="setMenu"></div>
+  <div class="menu" id="menu">
+    <div class="item" data-act="save">Enregistrer la frame sous… <kbd>Ctrl+S</kbd></div>
+    <div class="item" data-act="copy">Copier la frame <kbd>Ctrl+C</kbd></div>
+    <div class="sep"></div>
+    <div class="head">Éditer</div>
+    <div class="item" data-act="markIn">Début de l'extrait ici <kbd>I</kbd></div>
+    <div class="item" data-act="markOut">Fin de l'extrait ici <kbd>O</kbd></div>
+    <div class="item" data-act="clearSel">Effacer la sélection <kbd>Alt+X</kbd></div>
+    <div class="item" data-act="export">Enregistrer l'extrait sous… <kbd>Ctrl+E</kbd></div>
+    <div class="sep"></div>
+    <div class="item" data-act="open">Ouvrir un fichier… <kbd>Ctrl+O</kbd></div>
+    <div class="item" data-act="folder">Afficher dans le dossier</div>
+    <div class="sep"></div>
+    <div class="item" data-act="play">Lecture / Pause <kbd>Espace</kbd></div>
+    <div class="item" data-act="fs">Plein écran <kbd>F</kbd></div>
+    <div class="sep"></div>
+    <div class="item" data-act="quit">Quitter <kbd>Q</kbd></div>
+  </div>
+  <div class="tip" id="tip"></div>
+  <div class="edge"></div>
+  <div class="grip n" data-dir="n"></div><div class="grip s" data-dir="s"></div>
+  <div class="grip e" data-dir="e"></div><div class="grip w" data-dir="w"></div>
+  <div class="grip ne" data-dir="ne"></div><div class="grip nw" data-dir="nw"></div>
+  <div class="grip se" data-dir="se"></div><div class="grip sw" data-dir="sw"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const win = $("win"), stage = $("stage");
+
+// --- Bridge to the Rust side (src/app.rs)
+const send = msg => window.ipc.postMessage(JSON.stringify(msg));
+const cmd = (...a) => send({ t: "cmd", a: a.map(String) });
+const setProp = (k, v) => send({ t: "set", k, v: String(v) });
+const st = {}; // mirror of the observed mpv properties (strings, or parsed JSON for lists)
+const num = k => { const v = parseFloat(st[k]); return Number.isFinite(v) ? v : 0; };
+const json = k => { try { return JSON.parse(st[k] ?? "null"); } catch { return null; } };
+
+// --- Lucide icons
+const setSrc = el => el.style.setProperty("--src", `url(icons/${el.dataset.i}.svg)`);
+document.querySelectorAll(".ico").forEach(setSrc);
+function swapIcon(el, name) {
+  if (el.dataset.i === name) return;
+  el.dataset.i = name; setSrc(el);
+  el.classList.remove("swap"); void el.offsetWidth; el.classList.add("swap");
+}
+
+const fmt = s => {
+  s = Math.max(0, Math.floor(s || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, sec = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+};
+
+// --- State from mpv → render
+let scrubbing = false;
+window.vb = {
+  update(changes) { Object.assign(st, changes); render(); },
+  loading(on) { on ? startLoading() : stopLoading(); },
+  toast: msg => toast(msg),
+  drag(on) { stage.classList.toggle("dragging", on); },
+  fullscreen(on) { win.classList.toggle("fullscreen", on); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
+};
+
+function render() {
+  const idle = st["idle-active"] === "yes";
+  const audio = !idle && !json("current-tracks/video") && !!json("current-tracks/audio");
+  stage.classList.toggle("idle", idle);
+  stage.classList.toggle("audio", audio);
+
+  const t = num("time-pos"), d = num("duration");
+  const name = idle ? "Visiblement" : (st.filename || "Visiblement");
+  if ($("title").textContent !== name) $("title").textContent = name;
+  const count = num("playlist-count"), pos = num("playlist-pos");
+  $("pos").textContent = !idle && count > 1 ? `${pos + 1} / ${count}` : "";
+  const frame = st["estimated-frame-number"], frames = st["estimated-frame-count"];
+  const hasFrames = !audio && frame != null && frames != null;
+  $("time").textContent = fmt(t); $("dur").textContent = fmt(d);
+  $("frameStat").hidden = !hasFrames;
+  if (hasFrames) { $("frame").textContent = frame; $("frames").textContent = frames; }
+  if (!scrubbing) $("fill").style.width = (d ? Math.min(1, t / d) * 100 : 0) + "%";
+
+  const paused = st.pause === "yes";
+  swapIcon($("playIcon"), paused ? "play" : "pause");
+  $("play").dataset.tip = paused ? "Lecture (Espace)" : "Pause (Espace)";
+
+  renderVolume();
+  renderMarks(d);
+
+  const alpha = st.alpha === "true", tiles = st.background === "tiles";
+  $("alphaBtn").hidden = !alpha;
+  $("alphaBtn").classList.toggle("on", tiles);
+  swapIcon($("alphaIcon"), tiles ? "grid-2x2-check" : "grid-2x2");
+}
+
+// Markers (WAV cue points / After Effects) and the I–O selection on the timeline.
+let marksKey = "";
+function renderMarks(d) {
+  const chapters = json("chapter-list") || [];
+  const key = JSON.stringify(chapters) + d;
+  if (key !== marksKey) {
+    marksKey = key;
+    $("marks").replaceChildren(...chapters.filter(() => d > 0).map(c => {
+      const el = document.createElement("div");
+      el.className = "mark"; el.style.left = (c.time / d * 100) + "%";
+      el.dataset.tip = c.title || "Marqueur";
+      el.addEventListener("mouseenter", () => showTip(el)); el.addEventListener("mouseleave", hideTip);
+      el.addEventListener("pointerdown", ev => { ev.stopPropagation(); cmd("seek", c.time, "absolute+exact"); });
+      return el;
+    }));
+  }
+  const a = parseFloat(st["ab-loop-a"]), b = parseFloat(st["ab-loop-b"]);
+  const sel = $("sel");
+  if (d > 0 && (Number.isFinite(a) || Number.isFinite(b))) {
+    const from = Number.isFinite(a) ? a : 0, to = Number.isFinite(b) ? b : d;
+    sel.style.display = "block"; sel.style.left = (from / d * 100) + "%"; sel.style.width = (Math.max(0, to - from) / d * 100) + "%";
+  } else sel.style.display = "none";
+}
+
+// --- Mascot eyes: a spring chases the gaze target (slight overshoot = alive), wide range off-centre,
+// random glances when the mouse rests, blinks now and then.
+const eyeEls = [...document.querySelectorAll(".eye")];
+const EYE_C = { x: 256, y: 256 }, RANGE = 44;
+let gaze = { ...EYE_C }, epos = { x: 0, y: 0 }, evel = { x: 0, y: 0 };
+let lastMove = 0, nextGlance = 0, blinkUntil = 0, nextBlink = performance.now() + 2500;
+addEventListener("mousemove", ev => {
+  const r = $("mascot").getBoundingClientRect();
+  if (!r.width) return;
+  const s = 512 / r.width;
+  gaze = { x: (ev.clientX - r.left) * s, y: (ev.clientY - r.top) * s };
+  lastMove = performance.now();
+});
+(function eyeLoop(t) {
+  if (stage.classList.contains("idle") || stage.classList.contains("audio")) {
+    if (t - lastMove > 2500 && t > nextGlance) {
+      const a = Math.random() * Math.PI * 2, d = 120 + Math.random() * 400;
+      gaze = Math.random() < 0.25 ? { ...EYE_C } : { x: EYE_C.x + Math.cos(a) * d, y: EYE_C.y + Math.sin(a) * d * 0.7 };
+      nextGlance = t + 900 + Math.random() * 2200;
+    }
+    const dx = gaze.x - EYE_C.x, dy = gaze.y - EYE_C.y, d = Math.hypot(dx, dy) || 1, k = Math.min(d / 3, RANGE) / d;
+    evel.x = (evel.x + (dx * k - epos.x) * 0.14) * 0.74;
+    evel.y = (evel.y + (dy * k - epos.y) * 0.14) * 0.74;
+    epos.x += evel.x; epos.y += evel.y;
+    if (t > nextBlink) { blinkUntil = t + 140; nextBlink = t + 2200 + Math.random() * 3800; }
+    const ry = t < blinkUntil ? 4 : 34;
+    for (const el of eyeEls) el.setAttribute("ry", ry);
+    $("eyes").setAttribute("transform", `translate(${epos.x.toFixed(2)} ${epos.y.toFixed(2)})`);
+  }
+  requestAnimationFrame(eyeLoop);
+})(0);
+
+// --- Matrix dot loader (same formula as transitions.dev's demo, recreated)
+const dots = Array.from({ length: 25 }, () => $("loader").appendChild(document.createElement("i")));
+let loadingSince = 0, loaderRaf = 0;
+function dotLevel(t, i, j) {
+  const dx = Math.abs(i - 2), dy = Math.abs(j - 2);
+  const d = [Math.max(dx, dy), dx + dy, (i + j) / 2, Math.hypot(dx, dy)][Math.floor(t / 0.9) % 4];
+  const wave = (Math.sin(t * 7 - d * 1.6) + 1) / 2;
+  return 0.12 + 0.88 * wave * wave;
+}
+function loaderFrame(now) {
+  const t = (now - loadingSince) / 1000;
+  $("loader").classList.toggle("show", t > 0.18); // fast opens never flash it
+  dots.forEach((el, k) => el.style.opacity = dotLevel(t, k % 5, Math.floor(k / 5)).toFixed(3));
+  loaderRaf = requestAnimationFrame(loaderFrame);
+}
+function startLoading() { if (!loaderRaf) { loadingSince = performance.now(); loaderRaf = requestAnimationFrame(loaderFrame); } }
+function stopLoading() { cancelAnimationFrame(loaderRaf); loaderRaf = 0; $("loader").classList.remove("show"); }
+
+// --- Transport
+const togglePlay = () => cmd("cycle", "pause");
+$("play").onclick = togglePlay;
+$("prev").onclick = () => cmd("playlist-prev");
+$("next").onclick = () => cmd("playlist-next");
+$("stepBack").onclick = () => cmd("frame-back-step");
+$("stepFwd").onclick = () => cmd("frame-step");
+$("fs").onclick = () => send({ t: "win", a: "fs" });
+
+// Click on the picture: play / pause; double-click: fullscreen (like YouTube).
+let clickTimer;
+stage.addEventListener("click", ev => {
+  if (ev.target.closest(".controls, .menu") || stage.classList.contains("idle")) return;
+  clearTimeout(clickTimer); clickTimer = setTimeout(togglePlay, 220);
+});
+stage.addEventListener("dblclick", ev => {
+  if (ev.target.closest(".controls, .menu")) return;
+  clearTimeout(clickTimer); $("fs").onclick();
+});
+
+// Scrubbing: press and drag on the timeline, the picture follows in real time.
+let scrubTarget = null, scrubRaf = 0;
+function timeAt(ev) {
+  const r = $("timeline").getBoundingClientRect();
+  return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)) * num("duration");
+}
+function scrubTo(ev) {
+  const t = timeAt(ev), d = num("duration");
+  $("fill").style.width = (d ? t / d * 100 : 0) + "%";
+  scrubTarget = t;
+  if (!scrubRaf) scrubRaf = requestAnimationFrame(() => { scrubRaf = 0; if (scrubTarget != null) cmd("seek", scrubTarget, "absolute+exact"); });
+}
+$("timeline").addEventListener("pointerdown", ev => {
+  if (ev.button !== 0) return;
+  $("timeline").setPointerCapture(ev.pointerId);
+  scrubbing = true; $("timeline").classList.add("scrubbing"); scrubTo(ev);
+});
+$("timeline").addEventListener("pointermove", ev => {
+  const r = $("timeline").getBoundingClientRect();
+  $("hoverTime").style.left = Math.min(r.width - 24, Math.max(24, ev.clientX - r.left)) + "px";
+  $("hoverTime").textContent = fmt(timeAt(ev));
+  if (scrubbing) scrubTo(ev);
+});
+$("timeline").addEventListener("pointerup", () => { scrubbing = false; $("timeline").classList.remove("scrubbing"); });
+new ResizeObserver(([e]) => $("fill").style.setProperty("--full", e.contentRect.width + "px")).observe($("timeline"));
+
+// --- Volume: target set instantly, mpv's volume glides there (no clicks or jumps).
+let volTarget = null, volCurrent = null, volRaf = 0;
+function renderVolume() {
+  const muted = st.mute === "yes";
+  const v = muted ? 0 : (volTarget ?? num("volume") / 100);
+  $("level").style.width = v * 100 + "%"; $("knob").style.left = v * 100 + "%";
+  swapIcon($("volIcon"), v === 0 ? "volume-off" : v < 0.5 ? "volume-1" : "volume-2");
+}
+function setVolume(v) {
+  volTarget = Math.min(1, Math.max(0, v));
+  if (st.mute === "yes") cmd("set", "mute", "no");
+  if (volCurrent == null) volCurrent = num("volume") / 100;
+  if (!volRaf) volRaf = requestAnimationFrame(glide);
+  renderVolume(); flashVol();
+}
+function glide() {
+  volCurrent += (volTarget - volCurrent) * 0.25;
+  if (Math.abs(volTarget - volCurrent) < 0.004) volCurrent = volTarget;
+  cmd("set", "volume", (volCurrent * 100).toFixed(1));
+  if (volCurrent !== volTarget) volRaf = requestAnimationFrame(glide);
+  else { volRaf = 0; volTarget = null; volCurrent = null; }
+}
+let volTimer;
+const flashVol = () => { $("vol").classList.add("active"); clearTimeout(volTimer); volTimer = setTimeout(() => $("vol").classList.remove("active"), 1200); };
+$("mute").onclick = () => cmd("cycle", "mute");
+$("vol").addEventListener("wheel", ev => { ev.preventDefault(); setVolume((volTarget ?? num("volume") / 100) - Math.sign(ev.deltaY) * 0.05); }, { passive: false });
+function railSet(ev) { const r = $("rail").getBoundingClientRect(); setVolume((ev.clientX - r.left) / r.width); }
+$("rail").addEventListener("pointerdown", ev => { $("rail").setPointerCapture(ev.pointerId); railSet(ev); $("rail").onpointermove = railSet; });
+$("rail").addEventListener("pointerup", () => $("rail").onpointermove = null);
+
+// --- Alpha: checkerboard behind transparent videos (mpv draws it)
+$("alphaBtn").onclick = () => {
+  const on = st.background !== "tiles";
+  setProp("background", on ? "tiles" : "color");
+  toast(on ? "Damier de transparence" : "Fond uni");
+};
+
+// --- Menus: open from where they were invoked (transform-origin follows the anchor).
+const menus = [$("menu"), $("subsMenu"), $("setMenu")];
+const anyMenuOpen = () => menus.some(m => m.classList.contains("open"));
+const closeAll = () => { menus.forEach(m => m.classList.remove("open")); $("subsBtn").classList.remove("on"); $("setBtn").classList.remove("on"); };
+function openAt(menu, x, y, origin) {
+  closeAll();
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  const left = Math.max(8, Math.min(x, innerWidth - w - 8)), top = Math.max(8, Math.min(y, innerHeight - h - 8));
+  menu.style.left = left + "px"; menu.style.top = top + "px";
+  menu.style.transformOrigin = origin ?? `${x - left}px ${y - top}px`;
+  menu.classList.add("open");
+}
+function popover(btn, menu, build) {
+  btn.onclick = ev => {
+    ev.stopPropagation();
+    if (menu.classList.contains("open")) return closeAll();
+    build();
+    const b = btn.getBoundingClientRect();
+    openAt(menu, b.right - menu.offsetWidth, b.top - menu.offsetHeight - 8, "bottom right");
+    btn.classList.add("on"); hideTip();
+  };
+}
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const trackName = tr => [tr.title, tr.lang && tr.lang.toUpperCase()].filter(Boolean).join(" · ") || `Piste ${tr.id}`;
+
+function buildSubs() {
+  const m = $("subsMenu"), tracks = (json("track-list") || []).filter(t => t.type === "sub");
+  const sid = st.sid;
+  const items = [el("div", "head", "Sous-titres")];
+  const off = el("div", "item" + (sid === "no" || !tracks.some(t => t.selected) ? " checked" : ""), "Désactivés");
+  off.onclick = () => { cmd("set", "sid", "no"); closeAll(); };
+  items.push(off);
+  for (const tr of tracks) {
+    const it = el("div", "item" + (tr.selected ? " checked" : ""), trackName(tr));
+    it.onclick = () => { cmd("set", "sid", tr.id); closeAll(); toast("Sous-titres : " + trackName(tr)); };
+    items.push(it);
+  }
+  const load = el("div", "item", "Charger un fichier…");
+  load.onclick = () => { closeAll(); send({ t: "open-subs" }); };
+  items.push(el("div", "sep"), load);
+  m.replaceChildren(...items);
+}
+function buildSettings() {
+  const m = $("setMenu");
+  const speeds = el("div", "chips");
+  for (const s of [0.5, 0.75, 1, 1.5, 2]) {
+    const chip = el("span", Math.abs(num("speed") - s) < 0.01 ? "checked" : "", `${s}×`);
+    chip.onclick = () => { cmd("set", "speed", s); speeds.querySelectorAll("span").forEach(c => c.classList.toggle("checked", c === chip)); };
+    speeds.append(chip);
+  }
+  const loop = el("div", "item" + (st["loop-file"] === "inf" ? " checked" : ""), "Lire en boucle");
+  loop.onclick = () => { cmd("set", "loop-file", st["loop-file"] === "inf" ? "no" : "inf"); closeAll(); };
+  // keep-open=yes moves on to the next file of the folder; "always" stops at the end of each file.
+  const chain = el("div", "item" + (st["keep-open"] !== "always" ? " checked" : ""), "Enchaîner le dossier");
+  chain.onclick = () => { cmd("set", "keep-open", st["keep-open"] === "always" ? "yes" : "always"); closeAll(); };
+  const items = [el("div", "head", "Vitesse"), speeds, el("div", "sep"), loop, chain];
+  const audios = (json("track-list") || []).filter(t => t.type === "audio");
+  if (audios.length > 1) {
+    items.push(el("div", "sep"), el("div", "head", "Piste audio"));
+    for (const tr of audios) {
+      const it = el("div", "item" + (tr.selected ? " checked" : ""), trackName(tr));
+      it.onclick = () => { cmd("set", "aid", tr.id); closeAll(); };
+      items.push(it);
+    }
+  }
+  const hw = st["hwdec-current"];
+  const dec = el("div", "item");
+  dec.append(el("span", "", "Décodage"), el("span", "val", hw && hw !== "no" ? `GPU (${hw})` : "CPU"));
+  items.push(el("div", "sep"), dec);
+  m.replaceChildren(...items);
+}
+popover($("subsBtn"), $("subsMenu"), buildSubs);
+popover($("setBtn"), $("setMenu"), buildSettings);
+stage.addEventListener("contextmenu", ev => { ev.preventDefault(); openAt($("menu"), ev.clientX, ev.clientY); });
+addEventListener("pointerdown", ev => { if (!menus.some(m => m.contains(ev.target)) && !ev.target.closest("#subsBtn, #setBtn")) closeAll(); });
+
+let toastTimer;
+function toast(msg) {
+  $("toast").textContent = msg; $("toast").classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 1800);
+}
+
+// Editor: I / O mark the selection (mpv's A-B loop previews it), Ctrl+E exports it.
+const markIn = () => { cmd("set", "ab-loop-a", num("time-pos")); toast("Début de l'extrait : " + fmt(num("time-pos"))); };
+const markOut = () => { cmd("set", "ab-loop-b", num("time-pos")); toast("Fin de l'extrait : " + fmt(num("time-pos"))); };
+const clearSel = () => { cmd("set", "ab-loop-a", "no"); cmd("set", "ab-loop-b", "no"); toast("Sélection effacée"); };
+const actions = {
+  save: () => send({ t: "save-frame" }), copy: () => send({ t: "copy-frame" }), export: () => send({ t: "export" }),
+  markIn, markOut, clearSel, open: () => send({ t: "open" }), folder: () => send({ t: "show-in-folder" }),
+  play: togglePlay, fs: () => $("fs").onclick(), quit: () => send({ t: "win", a: "close" }),
+};
+$("menu").addEventListener("click", ev => {
+  const act = ev.target.closest(".item")?.dataset.act; if (!act) return;
+  closeAll(); actions[act]?.();
+});
+
+// --- Tooltips: 500 ms delay the first time, then they travel between buttons; gone at once on leave.
+let tipTimer, tipWarm = false, coolTimer;
+function showTip(btn) {
+  const b = btn.getBoundingClientRect(), tip = $("tip");
+  tip.textContent = btn.dataset.tip;
+  tip.style.left = Math.max(40, Math.min(b.left + b.width / 2, innerWidth - 60)) + "px";
+  tip.style.top = (b.top - 34) + "px";
+  tip.classList.add("show"); tipWarm = true; clearTimeout(coolTimer);
+}
+function hideTip() {
+  clearTimeout(tipTimer); $("tip").classList.remove("show");
+  coolTimer = setTimeout(() => tipWarm = false, 400);
+}
+document.querySelectorAll(".bar [data-tip]").forEach(btn => {
+  btn.addEventListener("mouseenter", () => {
+    if (anyMenuOpen()) return;
+    clearTimeout(tipTimer);
+    tipWarm ? showTip(btn) : tipTimer = setTimeout(() => showTip(btn), 500);
+  });
+  btn.addEventListener("mouseleave", hideTip);
+  btn.addEventListener("click", hideTip);
+});
+
+// --- Window: dedicated title bar drags the window, buttons, resize grips
+$("titlebar").addEventListener("pointerdown", ev => {
+  if (ev.button === 0 && !ev.target.closest(".wbtn") && ev.detail === 1) send({ t: "win", a: "drag" });
+});
+$("titlebar").addEventListener("dblclick", ev => { if (!ev.target.closest(".wbtn")) send({ t: "win", a: "max" }); });
+$("wMin").onclick = () => send({ t: "win", a: "min" });
+$("wMax").onclick = () => send({ t: "win", a: "max" });
+$("wClose").onclick = () => send({ t: "win", a: "close" });
+document.querySelectorAll(".grip").forEach(g => g.addEventListener("pointerdown", ev => {
+  if (ev.button === 0) send({ t: "win", a: "resize", dir: g.dataset.dir });
+}));
+
+// --- Keyboard
+addEventListener("keydown", ev => {
+  const k = ev.key, c = ev.ctrlKey;
+  if (k === "Escape") { if (anyMenuOpen()) closeAll(); else if (win.classList.contains("fullscreen")) $("fs").onclick(); return; }
+  if (c && k.toLowerCase() === "o") { ev.preventDefault(); actions.open(); return; }
+  if (stage.classList.contains("idle")) return;
+  if (k === " ") { ev.preventDefault(); togglePlay(); }
+  else if (k === "ArrowRight") cmd("seek", 5, "relative+exact");
+  else if (k === "ArrowLeft") cmd("seek", -5, "relative+exact");
+  else if (k === "ArrowUp") { ev.preventDefault(); setVolume((volTarget ?? num("volume") / 100) + 0.05); }
+  else if (k === "ArrowDown") { ev.preventDefault(); setVolume((volTarget ?? num("volume") / 100) - 0.05); }
+  else if (k === ".") cmd("frame-step");
+  else if (k === ",") cmd("frame-back-step");
+  else if (k === "PageDown") cmd("playlist-next");
+  else if (k === "PageUp") cmd("playlist-prev");
+  else if (c && k.toLowerCase() === "s") { ev.preventDefault(); actions.save(); }
+  else if (c && k.toLowerCase() === "c") actions.copy();
+  else if (c && k.toLowerCase() === "e") { ev.preventDefault(); actions.export(); }
+  else if (ev.altKey && k.toLowerCase() === "x") clearSel();
+  else if (c) return;
+  else if (k === "m") cmd("cycle", "mute");
+  else if (k === "f") $("fs").onclick();
+  else if (k === "t" && !$("alphaBtn").hidden) $("alphaBtn").onclick();
+  else if (k === "l") { cmd("set", "loop-file", st["loop-file"] === "inf" ? "no" : "inf"); toast(st["loop-file"] === "inf" ? "Boucle désactivée" : "Lecture en boucle"); }
+  else if (k === "s") $("subsBtn").click();
+  else if (k === "i") markIn();
+  else if (k === "o") markOut();
+  else if (k === "q") actions.quit();
+});
+
+// Controls and cursor hide after 3 s without movement, or as soon as the mouse leaves the window
+// (never while a menu is open).
+let hideTimer;
+const hideUi = () => { if (!anyMenuOpen() && !scrubbing) { stage.classList.add("hide-ui"); hideTip(); } };
+addEventListener("mousemove", () => {
+  stage.classList.remove("hide-ui"); clearTimeout(hideTimer);
+  hideTimer = setTimeout(hideUi, 3000);
+});
+document.documentElement.addEventListener("mouseleave", () => { clearTimeout(hideTimer); hideUi(); });
+
+send({ t: "ready" });
+</script>
+</body>
+</html>

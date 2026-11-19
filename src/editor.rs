@@ -122,9 +122,11 @@ pub fn export(m: Mpv) -> thread::JoinHandle<()> {
             _ => "fichier entier".into(),
         };
         let settings = codecs(&out_ext, video_codec.as_deref(), audio_format.as_deref(), alpha);
+        crate::app::EXPORTING.store(true, std::sync::atomic::Ordering::Relaxed);
         let ok = encode(&m, &src, &out, a, b, &settings, |pct| {
-            m.cmd(&["show-text", &format!("Export ({span})… {pct:.0} %"), "1000"]);
+            m.toast(&format!("Export ({span})… {pct:.0} %"));
         });
+        crate::app::EXPORTING.store(false, std::sync::atomic::Ordering::Relaxed);
         let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         m.toast(&if ok { format!("Extrait enregistré : {name}") } else { "Échec de l'export".into() });
     })

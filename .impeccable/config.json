@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "ui/index.html"
+        ],
+        "createdAt": "2026-11-19T21:47:46.011Z",
+        "reason": "Claude: page background is transparent by design (video window shows through); muted text rgba(244,242,250,.6) sits on #141317 / dark video gradient, ~7:1"
+      }
+    ]
+  }
+}
