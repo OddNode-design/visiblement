@@ -332,10 +332,17 @@ fn add_recent_media(path: &str) {
     write_settings(settings);
 }
 
-/// Video capture devices (webcams, capture cards), by the names DirectShow uses.
+/// Video capture devices, by the names DirectShow uses: plugged-in webcams and capture cards,
+/// plus virtual cameras registered as DirectShow filters (OBS Virtual Camera, NVIDIA Broadcast,
+/// NDI Webcam from NDI Tools…).
 fn list_cameras() -> Vec<String> {
     use std::os::windows::process::CommandExt;
-    let script = "Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -in 'Camera','Image' -and $_.Status -eq 'OK' } | ForEach-Object { $_.Name }";
+    let script = r"
+        $names = @()
+        $names += Get-CimInstance Win32_PnPEntity | Where-Object { $_.PNPClass -in 'Camera','Image' -and $_.Status -eq 'OK' } | ForEach-Object { $_.Name }
+        $cat = 'HKLM:\SOFTWARE\Classes\CLSID\{860BB310-5D01-11d0-BD3B-00A0C911CE86}\Instance'
+        $names += Get-ChildItem $cat -ErrorAction SilentlyContinue | ForEach-Object { (Get-ItemProperty $_.PSPath).FriendlyName }
+        $names | Where-Object { $_ } | Sort-Object -Unique";
     std::process::Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", script])
         .creation_flags(0x0800_0000)
@@ -431,6 +438,7 @@ mod win {
         fn ShowWindow(hwnd: Hwnd, cmd: i32) -> i32;
         fn MonitorFromWindow(hwnd: Hwnd, flags: u32) -> Hwnd;
         fn RedrawWindow(hwnd: Hwnd, rect: *const c_void, region: Hwnd, flags: u32) -> i32;
+        fn GetWindowRect(hwnd: Hwnd, rect: *mut WinRect) -> i32;
         fn GetMonitorInfoW(monitor: Hwnd, info: *mut MonitorInfo) -> i32;
     }
 
@@ -461,6 +469,14 @@ mod win {
         let ok = unsafe { GetMonitorInfoW(MonitorFromWindow(hwnd as Hwnd, 2), &mut info) } != 0;
         let r = |r: &WinRect| (r.left, r.top, r.right - r.left, r.bottom - r.top);
         ok.then(|| (r(&info.monitor), r(&info.work)))
+    }
+
+    /// (x, y, width, height) of a window, as Windows has it right now.
+    pub fn window_rect(hwnd: isize) -> Option<Rect> {
+        let mut r = WinRect::default();
+        // SAFETY: valid window handle and a correctly laid out RECT.
+        let ok = unsafe { GetWindowRect(hwnd as Hwnd, &mut r) } != 0;
+        ok.then(|| (r.left, r.top, r.right - r.left, r.bottom - r.top))
     }
 
     /// Moves and resizes a window without activating it or changing its z-order.

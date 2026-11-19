@@ -228,10 +228,14 @@ enum Mode {
 
 type Rect = (i32, i32, i32, i32);
 
+/// The window's real rectangle, asked to Windows: tao's cached values can lag behind our own
+/// SetWindowPos calls (maximize / fullscreen / drag-out are done here, not through tao).
 fn rect_of(ui: &Window) -> Rect {
-    let p = ui.outer_position().unwrap_or_default();
-    let s = ui.outer_size();
-    (p.x, p.y, s.width as i32, s.height as i32)
+    win::window_rect(ui.hwnd()).unwrap_or_else(|| {
+        let p = ui.outer_position().unwrap_or_default();
+        let s = ui.outer_size();
+        (p.x, p.y, s.width as i32, s.height as i32)
+    })
 }
 
 /// A window move (empty `dir`) or resize from an edge ("n", "se"…), started at `cursor` (screen px).
@@ -480,7 +484,35 @@ pub fn run() -> Result<(), String> {
                         "win" => match s("a").as_str() {
                             // Moving / resizing is driven by the page (pointer capture + screen coordinates):
                             // Windows' own drag loop can't start while WebView2 holds the mouse capture.
-                            "grab" if mode != Mode::Normal => {} // maximized / fullscreen: stays put
+                            // Dragging the title bar of a maximized / fullscreen window: like Windows, it goes back
+                            // to its previous size under the cursor (same relative spot on the bar), then moves.
+                            "grab" if mode != Mode::Normal && s("dir").is_empty() => {
+                                let (Some(x), Some(y)) = (msg["x"].as_f64(), msg["y"].as_f64()) else { return };
+                                let prev = match mode {
+                                    Mode::Maximized { prev } => prev,
+                                    Mode::Fullscreen { prev, was_max } => was_max.unwrap_or(prev),
+                                    Mode::Normal => return,
+                                };
+                                let now = rect_of(&ui);
+                                let frac = ((x - now.0 as f64) / now.2.max(1) as f64).clamp(0.05, 0.95);
+                                let bar = TITLE_BAR * ui.scale_factor();
+                                let nx = (x - frac * prev.2 as f64).round() as i32;
+                                let ny = (y - bar / 2.0).round() as i32;
+                                if matches!(mode, Mode::Fullscreen { .. }) {
+                                    eval(&webview, "window.vb && vb.fullscreen(false)");
+                                }
+                                eval(&webview, "window.vb && vb.maximized(false)");
+                                mode = Mode::Normal;
+                                win::set_rect(ui.hwnd(), (nx, ny, prev.2, prev.3));
+                                sync_video(&ui, &video, false);
+                                grab = Some(Grab {
+                                    dir: String::new(),
+                                    cursor: (x, y),
+                                    pos: PhysicalPosition::new(nx, ny),
+                                    size: PhysicalSize::new(prev.2 as u32, prev.3 as u32),
+                                });
+                            }
+                            "grab" if mode != Mode::Normal => {} // no edge resizing while maximized / fullscreen
                             "grab" => {
                                 if let (Ok(pos), Some(x), Some(y)) = (ui.outer_position(), msg["x"].as_f64(), msg["y"].as_f64()) {
                                     grab = Some(Grab { dir: s("dir"), cursor: (x, y), pos, size: ui.outer_size() });

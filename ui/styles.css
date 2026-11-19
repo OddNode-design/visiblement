@@ -39,7 +39,10 @@
   .titlebar .wbtn:hover { background: var(--hover); opacity: 1; }
   .titlebar .wbtn.close:hover { background: #c42b1c; }
   .titlebar .wbtn .ico { width: 16px; height: 16px; }
-  .window.fullscreen .titlebar { display: none; }
+  /* Fullscreen: the title bar slides in from the top edge when the mouse reaches it (to grab or use the menus) */
+  .window.fullscreen .titlebar { position: absolute; left: 0; right: 0; top: 0; border-radius: 0;
+    transform: translateY(-100%); transition: transform .22s var(--ease-out); }
+  .window.fullscreen.peek .titlebar { transform: none; }
 
   /* Everything below the title bar sits over the video window */
   .stage { position: relative; flex: 1; overflow: hidden; }

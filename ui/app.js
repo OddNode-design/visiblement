@@ -57,7 +57,7 @@ window.vb = {
   },
   version(v) { if (!$("updBtn").classList.contains("available")) $("updText").textContent = `Version ${v} · Rechercher une mise à jour`; },
   maximized(on) { win.classList.toggle("maximized", on); swapIcon($("wMax").querySelector(".ico"), on ? "copy" : "square"); },
-  fullscreen(on) { win.classList.toggle("fullscreen", on); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
+  fullscreen(on) { win.classList.toggle("fullscreen", on); win.classList.remove("peek"); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
 };
 
 function render() {
@@ -611,7 +611,9 @@ vb.recent = list => {
 
 // Capture devices
 vb.cameras = list => {
-  $("camText").textContent = list.length ? "Choisissez une caméra ou une carte d'acquisition." : "Aucun périphérique de capture détecté.";
+  $("camText").textContent = list.length
+    ? "Choisissez une caméra, une carte d'acquisition ou une caméra virtuelle."
+    : "Aucun périphérique détecté. Pour une source NDI, lancez « NDI Webcam » (NDI Tools) puis réessayez.";
   $("camList").replaceChildren(...list.map(name => {
     const b = el("button");
     const icon = el("i", "ico"); icon.dataset.i = "webcam"; setSrc(icon);
@@ -764,5 +766,13 @@ Object.assign(actions, {
   removeMask: () => { maskLoaded = maskShown = maskInverted = false; maskAlpha = null; $("maskName").textContent = "Aucun masque"; syncMaskMenu(); toast("Masque retiré"); },
 });
 syncMaskMenu();
+
+// Fullscreen: show the title bar when the mouse touches the top edge, hide it once it moves away.
+addEventListener("mousemove", ev => {
+  if (!win.classList.contains("fullscreen")) return;
+  const menuOpen = navItems.some(i => i.classList.contains("open"));
+  if (ev.clientY <= 6) win.classList.add("peek");
+  else if (ev.clientY > 70 && !menuOpen && !grabbing) win.classList.remove("peek");
+});
 
 send({ t: "ready" });
