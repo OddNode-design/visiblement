@@ -35,7 +35,7 @@ const OBSERVED: &[&str] = &[
     "pause", "time-pos", "duration", "volume", "mute", "filename", "path", "playlist-pos", "playlist-count",
     "estimated-frame-number", "estimated-frame-count", "container-fps", "idle-active", "speed", "loop-file",
     "keep-open", "ab-loop-a", "ab-loop-b", "chapter-list", "track-list", "sid", "aid", "background",
-    "hwdec-current", "current-tracks/video", "current-tracks/audio", "video-params",
+    "hwdec-current", "current-tracks/video", "current-tracks/audio", "video-params", "osd-dimensions",
 ];
 
 pub enum UserEvent {
@@ -86,10 +86,31 @@ pub fn toast(msg: &str) {
 }
 
 /// Files of the `ui` folder next to the exe, served at http://vb.localhost/.
+/// Image chosen with "Importer un masque", served to the page at /mask.
+static MASK: Mutex<Option<PathBuf>> = Mutex::new(None);
+
 fn serve(dir: &Path, req: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
     let rel = req.uri().path().trim_start_matches('/');
     let rel = if rel.is_empty() { "index.html" } else { rel };
     let not_found = || Response::builder().status(StatusCode::NOT_FOUND).body(Cow::Borrowed(&[][..])).unwrap();
+    if rel == "mask" {
+        let path = MASK.lock().ok().and_then(|m| m.clone());
+        return match path.and_then(|p| std::fs::read(&p).ok().map(|b| (p, b))) {
+            Some((p, bytes)) => {
+                let mime = match p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
+                    Some("png") => "image/png",
+                    Some("jpg" | "jpeg") => "image/jpeg",
+                    Some("webp") => "image/webp",
+                    Some("bmp") => "image/bmp",
+                    Some("gif") => "image/gif",
+                    Some("svg") => "image/svg+xml",
+                    _ => "application/octet-stream",
+                };
+                Response::builder().header(CONTENT_TYPE, mime).body(Cow::Owned(bytes)).unwrap()
+            }
+            None => not_found(),
+        };
+    }
     // Only plain relative paths inside the ui folder.
     if rel.split('/').any(|part| part == ".." || part.contains(':') || part.contains('\\')) {
         return not_found();
@@ -573,6 +594,21 @@ pub fn run() -> Result<(), String> {
                         }
                         "open-camera" => {
                             m.cmd(&["loadfile", &format!("av://dshow:video={}", s("name")), "replace"]);
+                        }
+                        "import-mask" => {
+                            if let Some(file) = rfd::FileDialog::new()
+                                .set_title("Importer un masque")
+                                .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "gif", "svg"])
+                                .pick_file()
+                            {
+                                let name = file.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                                if let Ok(mut slot) = MASK.lock() {
+                                    *slot = Some(file);
+                                }
+                                // The timestamp makes the page reload the image even if the path is the same.
+                                let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis());
+                                eval(&webview, &format!("window.vb && vb.mask({}, {})", json!(format!("mask?{stamp}")), json!(name)));
+                            }
                         }
                         "info" => eval(&webview, &format!("window.vb && vb.info({})", crate::media_info(&m))),
                         "open-subs" => {
