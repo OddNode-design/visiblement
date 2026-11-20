@@ -328,3 +328,6 @@
   /* Maximized or fullscreen: square corners, nothing behind shows through */
   .window.maximized .titlebar, .window.fullscreen .titlebar { border-radius: 0; }
   .window.maximized .edge { border-radius: 0; box-shadow: none; }
+
+  .stage.v360 { cursor: grab; }
+  .stage.v360:active { cursor: grabbing; }

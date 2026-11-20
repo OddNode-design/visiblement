@@ -484,6 +484,23 @@ pub fn run() -> Result<(), String> {
                             }
                         }
                         "set" => m.set(&s("k"), &s("v")),
+                        // 360° view: the shader renders at window size, so mpv must not letterbox it.
+                        "probe360" => {
+                            let path = s("path");
+                            thread::spawn(move || {
+                                let on = crate::is_spherical(&path);
+                                eval_js(&format!("window.vb && vb.spherical({}, {on})", json!(path)));
+                            });
+                        }
+                        "view360" => {
+                            let on = msg["on"].as_bool() == Some(true);
+                            let shader = std::env::temp_dir().join("visiblement-360.glsl");
+                            if on {
+                                let _ = std::fs::write(&shader, include_str!("360.glsl"));
+                            }
+                            m.set("glsl-shaders", if on { shader.to_str().unwrap_or("") } else { "" });
+                            m.set("keepaspect", if on { "no" } else { "yes" });
+                        }
                         "win" => match s("a").as_str() {
                             // Moving / resizing is driven by the page (pointer capture + screen coordinates):
                             // Windows' own drag loop can't start while WebView2 holds the mouse capture.

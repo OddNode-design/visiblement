@@ -73,6 +73,13 @@ function render() {
   if ($("title").textContent !== name) $("title").textContent = name;
   const vp = json("video-params");
   $("res").textContent = !idle && !audio && vp && vp.w ? `${vp.w} × ${vp.h}` : "";
+  // 360° view on by itself: spatial-media metadata in the file (vb.spherical), or a 2:1 picture named "360".
+  if (vp && vp.w && `${st.path}|${vp.w}x${vp.h}` !== v360Key) {
+    v360Key = `${st.path}|${vp.w}x${vp.h}`;
+    const named = vp.w === 2 * vp.h && /360/.test(st.filename || "");
+    if (named !== v360) set360(named, !named);
+    if (!isStream) send({ t: "probe360", path: st.path });
+  }
   const count = num("playlist-count"), pos = num("playlist-pos");
   $("pos").textContent = !idle && count > 1 ? `${pos + 1} / ${count}` : "";
   const frame = st["estimated-frame-number"], frames = st["estimated-frame-count"];
@@ -247,6 +254,7 @@ $("fs").onclick = () => send({ t: "win", a: "fs" });
 let clickTimer;
 stage.addEventListener("click", ev => {
   if (ev.target.closest(".controls, .menu") || stage.classList.contains("idle")) return;
+  if (looked) { looked = false; return; } // end of a 360° drag, not a click
   clearTimeout(clickTimer); clickTimer = setTimeout(togglePlay, 220);
 });
 stage.addEventListener("dblclick", ev => {
@@ -531,6 +539,7 @@ addEventListener("keydown", ev => {
   else if (k === "t" && !$("alphaBtn").hidden) $("alphaBtn").onclick();
   else if (k === "l") { cmd("set", "loop-file", st["loop-file"] === "inf" ? "no" : "inf"); toast(st["loop-file"] === "inf" ? "Boucle désactivée" : "Lecture en boucle"); }
   else if (k === "s") $("subsBtn").click();
+  else if (k === "v") actions.toggle360();
   else if (k === "b") markIn();
   else if (k === "n") markOut();
 });
@@ -783,6 +792,47 @@ Object.assign(actions, {
   removeMask: () => { maskLoaded = maskShown = maskInverted = false; maskAlpha = null; $("maskName").textContent = "Aucun masque"; syncMaskMenu(); toast("Masque retiré"); },
 });
 syncMaskMenu();
+
+// --- 360° view: mpv projects the sphere (src/360.glsl); drag the picture to look around, wheel to zoom.
+var v360 = false, v360Key = null, looked = false;
+let view, look = null, viewRaf = 0;
+const rad = d => d * Math.PI / 180;
+const sendView = () => { viewRaf = 0; send({ t: "set", k: "glsl-shader-opts", v: `yaw=${rad(view.yaw)},pitch=${rad(view.pitch)},fov=${rad(view.fov)}` }); };
+const queueView = () => { viewRaf ||= requestAnimationFrame(sendView); };
+function set360(on, quiet) {
+  v360 = on; view = { yaw: 0, pitch: 0, fov: 100 };
+  if (on) sendView();
+  send({ t: "view360", on });
+  // Redraw at the screen's rate, not the video's: turning the view stays smooth during playback.
+  send({ t: "set", k: "video-sync", v: on ? "display-resample" : "audio" });
+  send({ t: "set", k: "interpolation", v: on ? "yes" : "no" });
+  stage.classList.toggle("v360", on);
+  $("v360Toggle").querySelector("b").textContent = on ? "Quitter la vue 360°" : "Vue 360°";
+  if (!quiet) toast(on ? "Vue 360° : glissez pour regarder autour" : "Vue 360° désactivée");
+}
+actions.toggle360 = () => set360(!v360);
+vb.spherical = (path, on) => { if (on && path === st.path && !v360) set360(true); };
+stage.addEventListener("pointerdown", ev => {
+  if (!v360 || ev.button !== 0 || ev.target.closest(".controls, .menu")) return;
+  look = { x: ev.clientX, y: ev.clientY }; looked = false; stage.setPointerCapture(ev.pointerId);
+});
+stage.addEventListener("pointermove", ev => {
+  if (!look) return;
+  const dx = ev.clientX - look.x, dy = ev.clientY - look.y;
+  if (!looked && Math.hypot(dx, dy) < 4) return;
+  looked = true; look = { x: ev.clientX, y: ev.clientY };
+  const k = view.fov / stage.clientWidth;
+  view.yaw = (view.yaw - dx * k) % 360;
+  view.pitch = Math.max(-90, Math.min(90, view.pitch + dy * k));
+  queueView();
+});
+stage.addEventListener("pointerup", () => { look = null; });
+stage.addEventListener("wheel", ev => {
+  if (!v360 || ev.target.closest(".controls, .menu")) return;
+  ev.preventDefault();
+  view.fov = Math.max(30, Math.min(140, view.fov * (ev.deltaY > 0 ? 1.1 : 1 / 1.1)));
+  queueView();
+}, { passive: false });
 
 // Fullscreen: show the title bar when the mouse touches the top edge, hide it once it moves away.
 addEventListener("mousemove", ev => {

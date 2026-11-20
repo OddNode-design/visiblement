@@ -162,6 +162,46 @@ fn is_alpha_format(f: &str) -> bool {
         || ["rgba", "bgra", "argb", "abgr"].iter().any(|p| f.starts_with(p))
 }
 
+/// 360° video: the spatial-media metadata (Google's injector: v1 XML in a uuid box, or the v2 `sv3d` box)
+/// in the `moov` of an MP4 / MOV.
+fn is_spherical(path: &str) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else { return false };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut pos = 0u64;
+    while pos + 8 <= len {
+        let mut h = [0u8; 16];
+        if f.seek(SeekFrom::Start(pos)).is_err() || f.read_exact(&mut h[..8]).is_err() {
+            return false;
+        }
+        let mut size = u32::from_be_bytes([h[0], h[1], h[2], h[3]]) as u64;
+        if size == 1 {
+            if f.read_exact(&mut h[8..]).is_err() {
+                return false;
+            }
+            size = u64::from_be_bytes(h[8..].try_into().unwrap());
+        } else if size == 0 {
+            size = len - pos;
+        }
+        if size < 8 {
+            return false;
+        }
+        if &h[4..8] == b"moov" {
+            let mut moov = vec![0; size.min(64 << 20) as usize];
+            return f.seek(SeekFrom::Start(pos)).is_ok() && f.read_exact(&mut moov).is_ok() && spherical_in(&moov);
+        }
+        pos += size;
+    }
+    false
+}
+
+fn spherical_in(moov: &[u8]) -> bool {
+    const UUID: [u8; 16] = [0xff, 0xcc, 0x82, 0x63, 0xf8, 0x55, 0x4a, 0x93, 0x88, 0x14, 0x58, 0x7a, 0x02, 0x52, 0x1f, 0xdd];
+    let find = |n: &[u8]| moov.windows(n.len()).position(|w| w == n);
+    find(b"sv3d").is_some()
+        || find(&UUID).is_some_and(|i| String::from_utf8_lossy(&moov[i..moov.len().min(i + 4096)]).contains("Spherical>true"))
+}
+
 // Animated images loop forever, like in a browser.
 fn is_animated_image(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
@@ -582,6 +622,24 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn spherical_detection() {
+        let mut v1 = b"....trak".to_vec();
+        v1.extend([0xff, 0xcc, 0x82, 0x63, 0xf8, 0x55, 0x4a, 0x93, 0x88, 0x14, 0x58, 0x7a, 0x02, 0x52, 0x1f, 0xdd]);
+        v1.extend(b"<rdf:SphericalVideo><GSpherical:Spherical>true</GSpherical:Spherical>");
+        assert!(spherical_in(&v1));
+        assert!(spherical_in(b"....sv3d....proj"));
+        assert!(!spherical_in(b"....trak....mdia"));
+    }
+
+    /// VB_360_YES / VB_360_NO: a video with / without spatial-media metadata.
+    #[test]
+    #[ignore]
+    fn spherical_files() {
+        assert!(is_spherical(&std::env::var("VB_360_YES").unwrap()));
+        assert!(!is_spherical(&std::env::var("VB_360_NO").unwrap()));
+    }
 
     #[test]
     fn animated_detection() {
