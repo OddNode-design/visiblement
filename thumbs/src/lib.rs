@@ -1,7 +1,7 @@
 //! Explorer thumbnails for videos. Windows asks this COM server (IThumbnailProvider) for a picture
-//! of a file; libmpv, next to this DLL, decodes one frame of it (a tenth of the way in), and the
-//! Visiblement logo is laid small in the bottom-right corner. Any failure returns an error, and
-//! Explorer falls back to the file icon.
+//! of a file; libmpv, next to this DLL, decodes one frame of it (a tenth of the way in). Explorer
+//! lays the default app's icon in the corner by itself, so the picture stays clean. Any failure
+//! returns an error, and Explorer falls back to the file icon.
 
 use std::cell::RefCell;
 use std::ffi::{CString, c_char, c_void};
@@ -20,8 +20,6 @@ use windows::core::*;
 
 /// Registered by the installer under HKCU\Software\Classes\CLSID.
 pub const CLSID_THUMBNAILS: GUID = GUID::from_u128(0x3240865e_3ec8_438e_a36e_0c456e012f80);
-
-const LOGO_PNG: &[u8] = include_bytes!("../../assets/icon.png");
 
 #[implement(IThumbnailProvider, IInitializeWithStream)]
 struct Thumbnails {
@@ -54,8 +52,7 @@ impl IInitializeWithStream_Impl for Thumbnails_Impl {
 impl IThumbnailProvider_Impl for Thumbnails_Impl {
     fn GetThumbnail(&self, cx: u32, phbmp: *mut HBITMAP, alpha: *mut WTS_ALPHATYPE) -> Result<()> {
         let stream = self.stream.borrow().clone().ok_or(Error::from(E_UNEXPECTED))?;
-        let mut frame = grab_frame(&stream, cx.clamp(16, 2048)).ok_or(Error::from(E_FAIL))?;
-        overlay_logo(&mut frame);
+        let frame = grab_frame(&stream, cx.clamp(16, 2048)).ok_or(Error::from(E_FAIL))?;
         // SAFETY: the out pointers come from the caller of GetThumbnail.
         unsafe {
             *phbmp = to_bitmap(&frame)?;
@@ -371,58 +368,7 @@ unsafe extern "C" fn stream_size(cookie: *mut c_void) -> i64 {
     .unwrap_or(-4)
 }
 
-// ---------- Logo and bitmap ----------
-
-/// The app icon, a quarter of the thumbnail's width, in the bottom-right corner.
-pub fn overlay_logo(frame: &mut Frame) {
-    static LOGO: OnceLock<Option<Frame>> = OnceLock::new();
-    let Some(logo) = LOGO.get_or_init(|| {
-        let mut d = png::Decoder::new(std::io::Cursor::new(LOGO_PNG));
-        d.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-        let mut r = d.read_info().ok()?;
-        let mut buf = vec![0; r.output_buffer_size()?];
-        let info = r.next_frame(&mut buf).ok()?;
-        (info.color_type == png::ColorType::Rgba).then(|| Frame { w: info.width as usize, h: info.height as usize, rgba: buf })
-    }) else {
-        return;
-    };
-    let size = (frame.w.max(frame.h) / 4).clamp(12, frame.w.min(frame.h));
-    let margin = (size / 10).max(1);
-    let (x0, y0) = (frame.w.saturating_sub(size + margin), frame.h.saturating_sub(size + margin));
-    for y in 0..size.min(frame.h) {
-        for x in 0..size.min(frame.w) {
-            let src = box_sample(logo, x, y, size);
-            let i = ((y0 + y) * frame.w + x0 + x) * 4;
-            let a = src[3] as u32;
-            for c in 0..3 {
-                frame.rgba[i + c] = ((src[c] as u32 * a + frame.rgba[i + c] as u32 * (255 - a)) / 255) as u8;
-            }
-            frame.rgba[i + 3] = (a + frame.rgba[i + 3] as u32 * (255 - a) / 255).min(255) as u8;
-        }
-    }
-}
-
-/// Average of the logo pixels under output pixel (x, y) when the logo is shrunk to `size`.
-fn box_sample(logo: &Frame, x: usize, y: usize, size: usize) -> [u8; 4] {
-    let (sx0, sx1) = (x * logo.w / size, ((x + 1) * logo.w / size).max(x * logo.w / size + 1));
-    let (sy0, sy1) = (y * logo.h / size, ((y + 1) * logo.h / size).max(y * logo.h / size + 1));
-    let mut acc = [0u32; 4];
-    for sy in sy0..sy1.min(logo.h) {
-        for sx in sx0..sx1.min(logo.w) {
-            let p = &logo.rgba[(sy * logo.w + sx) * 4..][..4];
-            let a = p[3] as u32;
-            for c in 0..3 {
-                acc[c] += p[c] as u32 * a; // weight colours by alpha: no dark fringe
-            }
-            acc[3] += a;
-        }
-    }
-    let n = ((sx1.min(logo.w) - sx0) * (sy1.min(logo.h) - sy0)).max(1) as u32;
-    if acc[3] == 0 {
-        return [0; 4];
-    }
-    [(acc[0] / acc[3]) as u8, (acc[1] / acc[3]) as u8, (acc[2] / acc[3]) as u8, (acc[3] / n) as u8]
-}
+// ---------- Bitmap ----------
 
 /// A top-down 32-bit DIB with premultiplied alpha, as WTSAT_ARGB expects.
 fn to_bitmap(frame: &Frame) -> Result<HBITMAP> {
@@ -453,20 +399,9 @@ fn to_bitmap(frame: &Frame) -> Result<HBITMAP> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn logo_lands_bottom_right() {
-        let mut f = Frame { w: 200, h: 100, rgba: vec![0; 200 * 100 * 4] };
-        f.rgba.chunks_mut(4).for_each(|p| p[3] = 255);
-        overlay_logo(&mut f);
-        let at = |x: usize, y: usize| f.rgba[(y * 200 + x) * 4..][..4].to_vec();
-        assert_eq!(at(5, 5), vec![0, 0, 0, 255], "top-left untouched");
-        let corner: u32 = (150..195).flat_map(|x| (50..95).map(move |y| (x, y))).map(|(x, y)| at(x, y)[0] as u32).sum();
-        assert!(corner > 0, "logo drawn in the corner");
-    }
-
     /// The whole Windows path: the handler registered in HKCU (installer, or reg add for a dev build),
-    /// asked through the shell like Explorer does. A white video must come back with the dark logo
-    /// tile in its bottom-right corner.
+    /// asked through the shell like Explorer does. Windows cannot decode ProRes itself: a white
+    /// picture back means this handler drew it.
     #[test]
     #[ignore]
     fn shell_uses_the_registered_handler() {
@@ -499,9 +434,7 @@ mod tests {
         enc.set_color(png::ColorType::Rgba);
         enc.write_header().unwrap().write_image_data(&rgba).unwrap();
         assert!(at(w / 10, h / 10) > 200, "white video");
-        let (size, margin) = (w.max(h) / 4, w.max(h) / 40);
-        let (x0, y0) = (w - size - margin, h - size - margin);
-        assert!(at(x0 + size / 12, y0 + size / 2) < 100, "dark logo tile bottom-right ({w}x{h})");
+        assert!(at(w - w / 8, h - h / 4) > 200, "no logo drawn in the picture ({w}x{h})");
     }
 
     /// Needs ffmpeg on PATH and VISIBLEMENT_MPV_DIR = target\release (where libmpv-2.dll is);
@@ -529,8 +462,7 @@ mod tests {
         unsafe { GetObjectW(bmp.into(), size_of::<BITMAP>() as i32, Some(&mut b as *mut _ as *mut c_void)) };
         assert_eq!((b.bmWidth, b.bmHeight), (256, 144));
         // A copy to look at: <temp>isiblement-thumb-test	humb.png
-        let mut f = grab_frame(&stream, 256).unwrap();
-        overlay_logo(&mut f);
+        let f = grab_frame(&stream, 256).unwrap();
         let file = std::fs::File::create(tmp.join("thumb.png")).unwrap();
         let mut enc = png::Encoder::new(file, f.w as u32, f.h as u32);
         enc.set_color(png::ColorType::Rgba);
