@@ -147,7 +147,15 @@ addEventListener("mousemove", ev => {
   const s = 512 / r.width;
   gaze = { x: (ev.clientX - r.left) * s, y: (ev.clientY - r.top) * s };
   lastMove = performance.now();
+  wakeEyes();
 });
+// The eye loop sleeps while nothing moves (no frame drawn at all) and wakes for the next blink,
+// glance or mouse move.
+let eyeSleep = 0, eyeAwake = true;
+function wakeEyes() {
+  if (eyeAwake) return;
+  clearTimeout(eyeSleep); eyeAwake = true; requestAnimationFrame(eyeLoop);
+}
 // Organic bar heights: a few slow sines per bar, never in sync.
 const waveHeight = (i, t) => {
   const s = t / 1000;
@@ -155,8 +163,10 @@ const waveHeight = (i, t) => {
   const envelope = 1 - Math.abs(i - (BARS - 1) / 2) / BARS; // taller in the middle
   return 18 + (v * 0.5 + 0.5) * 70 * envelope;
 };
-(function eyeLoop(t) {
-  if (stage.classList.contains("idle") || stage.classList.contains("audio")) {
+function eyeLoop(t) {
+  let moved = false;
+  const shown = stage.classList.contains("idle") || stage.classList.contains("audio");
+  if (shown) {
     const wave = stage.classList.contains("audio") && stage.classList.contains("playing");
     if (t - lastMove > 2500 && t > nextGlance) {
       const a = Math.random() * Math.PI * 2, d = 120 + Math.random() * 400;
@@ -179,13 +189,22 @@ const waveHeight = (i, t) => {
       const ease = wave ? 0.18 : 0.12;
       for (const key of ["x", "y", "w", "h", "r", "o"]) b[key] += (target[key] - b[key]) * (key === "h" && blink && !wave ? 0.5 : ease);
       const r = Math.min(b.r, b.w / 2, b.h / 2);
-      b.el.setAttribute("x", (b.x - b.w / 2).toFixed(2)); b.el.setAttribute("y", (b.y - b.h / 2).toFixed(2));
-      b.el.setAttribute("width", Math.max(0, b.w).toFixed(2)); b.el.setAttribute("height", Math.max(0, b.h).toFixed(2));
-      b.el.setAttribute("rx", Math.max(0, r).toFixed(2)); b.el.setAttribute("opacity", b.o.toFixed(3));
+      const attrs = [(b.x - b.w / 2).toFixed(1), (b.y - b.h / 2).toFixed(1), Math.max(0, b.w).toFixed(1), Math.max(0, b.h).toFixed(1), Math.max(0, r).toFixed(1), b.o.toFixed(2)];
+      const key = attrs.join();
+      if (key !== b.last) {
+        b.last = key; moved = true;
+        ["x", "y", "width", "height", "rx", "opacity"].forEach((name, n) => b.el.setAttribute(name, attrs[n]));
+      }
     });
   }
-  requestAnimationFrame(eyeLoop);
-})(0);
+  const wave = shown && stage.classList.contains("audio") && stage.classList.contains("playing");
+  if (moved || wave) { requestAnimationFrame(eyeLoop); return; }
+  // Still: sleep until the next blink or glance (or a check every 0.5 s while the mascot is hidden).
+  const next = Math.min(nextBlink, Math.max(nextGlance, lastMove + 2500));
+  eyeAwake = false;
+  eyeSleep = setTimeout(() => { eyeAwake = true; requestAnimationFrame(eyeLoop); }, shown ? Math.max(16, next - t) : 500);
+}
+requestAnimationFrame(eyeLoop);
 
 // White sphere for audio: its radius follows a few slow harmonics with drifting phases, so the
 // outline keeps deforming organically. Filled with a soft radial white, blurred by CSS.
@@ -219,7 +238,8 @@ function drawMist() {
     mistLast = t;
     drawMist();
   } else if (!playing) mistLast = t;
-  requestAnimationFrame(mistLoop);
+  if (playing) requestAnimationFrame(mistLoop);
+  else setTimeout(() => requestAnimationFrame(mistLoop), 300); // no audio playing: no frames
 })(0);
 drawMist();
 
@@ -718,6 +738,8 @@ $("infoTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
   const body = $("infoBody"); body.scrollTop = 0; body.classList.remove("swap"); void body.offsetWidth; body.classList.add("swap");
 });
 vb.info = data => { info = data; renderInfo(); };
+// Accueil: stops playback and empties the playlist, back to the mascot screen.
+$("homeBtn").onclick = () => { closeNav(); cmd("stop"); };
 $("infoBtn").onclick = () => {
   closeNav(); modalOpen("infoBack"); send({ t: "info" });
   requestAnimationFrame(moveTabPill);
@@ -838,3 +860,32 @@ addEventListener("mousemove", ev => {
 });
 
 send({ t: "ready" });
+
+// --- Mascot gestures: now and then (every 15-35 s) the cloud turns around, hops, wobbles or shrinks and grows back.
+const GESTURES = [
+  [[{ transform: "rotate(0)" }, { transform: "rotate(360deg)" }], 2200, "cubic-bezier(.65,0,.35,1)"],
+  [[{ transform: "none" }, { transform: "scale(1.07,.93)", offset: .25 }, { transform: "translateY(-14px) scale(.95,1.06)", offset: .55 }, { transform: "none" }], 1100, "ease-in-out"],
+  [[{ transform: "rotate(0)" }, { transform: "rotate(-8deg)", offset: .25 }, { transform: "rotate(6deg)", offset: .55 }, { transform: "rotate(-2deg)", offset: .8 }, { transform: "rotate(0)" }], 1800, "ease-in-out"],
+  [[{ transform: "scale(1)" }, { transform: "scale(.88)", offset: .4 }, { transform: "scale(1.05)", offset: .75 }, { transform: "scale(1)" }], 1600, "ease-in-out"],
+];
+// Slow life (breathing, turning colours): moves of a few px per second, so 8 updates a second look
+// as fluid as 60 and the compositor draws 7x fewer frames. Nothing runs while the mascot is hidden.
+const flows = [...document.querySelectorAll(".cloud .flow")];
+setInterval(() => {
+  const m = $("mascotWrap");
+  if (!m.offsetParent || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const t = performance.now() / 1000;
+  m.style.transform = `scale(${(1 + 0.015 * (1 - Math.cos(t * Math.PI * 2 / 7))).toFixed(4)})`;
+  flows[0].style.transform = `rotate(${(t * 360 / 173 % 360).toFixed(2)}deg)`;
+  flows[1].style.transform = `scaleX(-1) rotate(${(t * 360 / 131 % 360).toFixed(2)}deg)`;
+}, 125);
+(function gesture() {
+  setTimeout(() => {
+    const m = $("mascotWrap");
+    if (m.offsetParent && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const [frames, duration, easing] = GESTURES[Math.floor(Math.random() * GESTURES.length)];
+      m.animate(frames, { duration, easing, composite: "add" }); // on top of the breathing
+    }
+    gesture();
+  }, 15000 + Math.random() * 20000);
+})();

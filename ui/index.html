@@ -12,6 +12,7 @@
     <span class="title" id="title">Visiblement</span>
     <span class="res" id="res"></span>
     <nav class="nav" id="nav">
+      <div class="nav-item"><button class="nav-btn" id="homeBtn">Accueil</button></div>
       <div class="nav-item">
         <button class="nav-btn">Média <i class="ico chev" data-i="chevron-down"></i></button>
         <div class="dropdown">
@@ -57,10 +58,12 @@
   <div class="stage idle" id="stage">
     <div class="mascot-screen">
       <canvas class="mist" id="mist" width="256" height="256"></canvas>
-      <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement">
-        <image href="cloud.svg" width="512" height="512"/>
-        <g fill="#121114" id="eyes"></g>
-      </svg>
+      <!-- Mascot: still layers the GPU only turns (no repaint), the eyes on top -->
+      <div class="mascot-wrap" id="mascotWrap">
+        <div class="cloud"><i class="flow"></i><i class="flow two"></i><i class="veil"></i><i class="grain"></i></div>
+        <img class="rim" src="cloud-rim.svg" alt="">
+        <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement"><g fill="#121114" id="eyes"></g></svg>
+      </div>
       <div class="hint">Glisse une vidéo ici ou clic droit pour le menu</div>
       <button class="upd" id="updBtn"><span class="dot"></span><span id="updText">Rechercher une mise à jour</span></button>
     </div>

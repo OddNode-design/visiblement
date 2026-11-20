@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <filter id="rim" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+    <feFlood flood-color="#fff"/>
+    <feComposite in2="SourceAlpha" operator="out"/>
+    <feGaussianBlur stdDeviation="12"/>
+    <feComposite in2="SourceAlpha" operator="in"/>
+  </filter>
+  <g filter="url(#rim)">
+  <circle cx="256" cy="262" r="118"/>
+  <circle cx="256" cy="150" r="46"/><circle cx="335" cy="183" r="46"/><circle cx="368" cy="262" r="46"/>
+  <circle cx="335" cy="341" r="46"/><circle cx="256" cy="374" r="46"/><circle cx="177" cy="341" r="46"/>
+  <circle cx="144" cy="262" r="46"/><circle cx="177" cy="183" r="46"/>
+  </g>
+</svg>

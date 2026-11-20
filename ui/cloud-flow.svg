@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="rainbow" gradientUnits="userSpaceOnUse" x1="40" y1="60" x2="470" y2="450">
+      <stop offset="0" stop-color="#ff8fc8"/>
+      <stop offset=".25" stop-color="#ffd98a"/>
+      <stop offset=".5" stop-color="#9df5b4"/>
+      <stop offset=".75" stop-color="#7fdcff"/>
+      <stop offset="1" stop-color="#a78bff"/>
+    </linearGradient>
+    <filter id="swirl" filterUnits="userSpaceOnUse" x="-100" y="-100" width="712" height="712">
+      <feTurbulence type="fractalNoise" baseFrequency=".006" numOctaves="2" seed="5" result="flow"/>
+      <feDisplacementMap in="SourceGraphic" in2="flow" scale="280" xChannelSelector="R" yChannelSelector="G" result="bent"/>
+      <feGaussianBlur in="bent" stdDeviation="20"/>
+    </filter>
+  </defs>
+  <g filter="url(#swirl)">
+    <rect x="-100" y="-100" width="712" height="712" fill="url(#rainbow)"/>
+    <circle cx="110" cy="330" r="105" fill="#ff8fc8"/>
+    <circle cx="380" cy="120" r="95" fill="#ff8fc8" fill-opacity=".8"/>
+    <circle cx="230" cy="430" r="90" fill="#ffd98a"/>
+    <circle cx="150" cy="120" r="90" fill="#ffd98a" fill-opacity=".8"/>
+    <circle cx="285" cy="300" r="80" fill="#9df5b4" fill-opacity=".85"/>
+    <circle cx="420" cy="410" r="85" fill="#7fdcff"/>
+    <circle cx="260" cy="60" r="80" fill="#7fdcff" fill-opacity=".8"/>
+    <circle cx="420" cy="260" r="100" fill="#a78bff"/>
+    <circle cx="60" cy="200" r="80" fill="#a78bff" fill-opacity=".7"/>
+  </g>
+</svg>

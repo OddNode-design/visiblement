@@ -5,7 +5,7 @@
       <stop offset="1" stop-color="#141316"/>
     </linearGradient>
     <!-- Holographic sheen: rainbow across, fading in from the top -->
-    <linearGradient id="rainbow" gradientUnits="userSpaceOnUse" x1="110" y1="0" x2="410" y2="0">
+    <linearGradient id="rainbow" gradientUnits="userSpaceOnUse" x1="120" y1="200" x2="400" y2="420">
       <stop offset="0" stop-color="#ff8fc8"/>
       <stop offset=".25" stop-color="#ffd98a"/>
       <stop offset=".5" stop-color="#9df5b4"/>
@@ -14,7 +14,7 @@
     </linearGradient>
     <linearGradient id="fade" gradientUnits="userSpaceOnUse" x1="0" y1="150" x2="0" y2="420">
       <stop offset="0" stop-color="#fff" stop-opacity="0"/>
-      <stop offset=".45" stop-color="#fff" stop-opacity=".35"/>
+      <stop offset=".4" stop-color="#fff" stop-opacity=".55"/>
       <stop offset="1" stop-color="#fff" stop-opacity="1"/>
     </linearGradient>
     <filter id="rim" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
@@ -25,7 +25,15 @@
     </filter>
     <mask id="fadeMask"><rect width="512" height="512" fill="url(#fade)"/></mask>
     <filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
-      <feGaussianBlur stdDeviation="18"/>
+      <!-- Low-frequency noise bends the colours into a flowing swirl, then a blur melts them together -->
+      <feTurbulence type="fractalNoise" baseFrequency=".006" numOctaves="2" seed="5" result="flow"/>
+      <feDisplacementMap in="SourceGraphic" in2="flow" scale="280" xChannelSelector="R" yChannelSelector="G" result="swirl"/>
+      <feGaussianBlur in="swirl" stdDeviation="20"/>
+    </filter>
+    <!-- Fine film grain over the colours -->
+    <filter id="grain" filterUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="3" stitchTiles="stitch"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .5 -.18"/>
     </filter>
     <clipPath id="cloud">
       <circle cx="256" cy="262" r="118"/>
@@ -41,9 +49,16 @@
   <!-- Cloud creature -->
   <g clip-path="url(#cloud)">
     <rect width="512" height="512" fill="#f7f6fb"/>
+    <!-- Soft colour blobs, blurred together: one continuous holographic blend -->
     <g mask="url(#fadeMask)" filter="url(#soft)">
       <rect x="60" y="60" width="400" height="400" fill="url(#rainbow)"/>
+      <circle cx="150" cy="300" r="105" fill="#ff8fc8"/>
+      <circle cx="225" cy="410" r="90" fill="#ffd98a"/>
+      <circle cx="285" cy="330" r="80" fill="#9df5b4" fill-opacity=".85"/>
+      <circle cx="345" cy="405" r="85" fill="#7fdcff"/>
+      <circle cx="390" cy="290" r="100" fill="#a78bff"/>
     </g>
+    <rect width="512" height="512" filter="url(#grain)" mask="url(#fadeMask)"/>
   </g>
   <!-- Inner rim light: white glow just inside the edge -->
   <g filter="url(#rim)">
