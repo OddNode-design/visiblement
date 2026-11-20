@@ -35,6 +35,7 @@
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
       <Component Id="Exe"><File Id="VisiblementExe" Source="$(BinDir)\visiblement.exe" /></Component>
       <Component Id="Mpv"><File Source="$(BinDir)\libmpv-2.dll" /></Component>
+      <Component Id="ThumbsDll"><File Id="ThumbsDll" Source="$(BinDir)\visiblement_thumbs.dll" /></Component>
       <Component Id="Readme"><File Source="README.md" /></Component>
       <Component Id="License"><File Source="LICENSE" /></Component>
       <Component Id="Folders">
@@ -85,6 +86,32 @@
         <RegistryValue Root="HKCU" Key="Software\Classes\.mp3\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
         <RegistryValue Root="HKCU" Key="Software\Classes\.flac\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
         <RegistryValue Root="HKCU" Key="Software\Classes\.m4a\OpenWithProgids" Name="Visiblement.Media" Value="" Type="string" />
+      </Component>
+
+      <!-- Explorer thumbnails for videos (thumbs/): a frame of the video with the logo in the corner.
+           Per-user COM classes are not seen by the isolated thumbnail process, hence DisableProcessIsolation. -->
+      <Component Id="Thumbnails">
+        <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{3240865e-3ec8-438e-a36e-0c456e012f80}" Value="Visiblement thumbnails" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{3240865e-3ec8-438e-a36e-0c456e012f80}" Name="DisableProcessIsolation" Value="1" Type="integer" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{3240865e-3ec8-438e-a36e-0c456e012f80}\InprocServer32" Value="[INSTALLFOLDER]visiblement_thumbs.dll" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{3240865e-3ec8-438e-a36e-0c456e012f80}\InprocServer32" Name="ThreadingModel" Value="Apartment" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\Visiblement.Media\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mp4\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mov\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.m4v\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mkv\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.webm\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.avi\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mxf\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.wmv\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.flv\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mpg\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mpeg\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.ts\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.mts\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.m2ts\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.3gp\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Classes\.ogv\ShellEx\{e357fccd-a995-4576-b01f-234630154e96}" Value="{3240865e-3ec8-438e-a36e-0c456e012f80}" Type="string" />
       </Component>
     </ComponentGroup>
   </Fragment>

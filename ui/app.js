@@ -433,6 +433,13 @@ function buildSettings() {
       items.push(it);
     }
   }
+  const langs = el("div", "chips");
+  for (const [code, label] of [["fr", "Français"], ["en", "English"]]) {
+    const chip = el("span", i18n.lang === code ? "checked" : "", label);
+    chip.onclick = () => { setLang(code); buildSettings(); };
+    langs.append(chip);
+  }
+  items.push(el("div", "sep"), el("div", "head", "Langue"), langs);
   const hw = st["hwdec-current"];
   const dec = el("div", "item");
   dec.append(el("span", "", "Décodage"), el("span", "val", hw && hw !== "no" ? `GPU (${hw})` : "CPU"));
@@ -738,6 +745,90 @@ $("infoTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
   const body = $("infoBody"); body.scrollTop = 0; body.classList.remove("swap"); void body.offsetWidth; body.classList.add("swap");
 });
 vb.info = data => { info = data; renderInfo(); };
+// --- Convertir: the open file, or an image sequence, into another format (src/editor.rs encodes;
+// the ids "codec:type" match editor::PRESETS). [id, label, spec, can carry alpha]
+const CODECS = [
+  { id: "h264", name: "H.264", ext: "mp4", types: [["hq", "Haute qualité", "CRF 16 · 4:2:0 · 8 bits"], ["std", "Standard", "CRF 20 · 4:2:0 · 8 bits"], ["small", "Léger", "CRF 26 · 4:2:0 · 8 bits"]] },
+  { id: "h265", name: "H.265 / HEVC", ext: "mp4", types: [["hq", "Haute qualité", "CQ 18 · encodé par la carte graphique"], ["std", "Standard", "CQ 22 · encodé par la carte graphique"], ["small", "Léger", "CQ 28 · encodé par la carte graphique"]] },
+  { id: "av1", name: "AV1", ext: "mp4", types: [["hq", "Haute qualité", "CRF 24 · 4:2:0 · 10 bits"], ["std", "Standard", "CRF 32 · 4:2:0 · 10 bits"], ["small", "Léger", "CRF 40 · 4:2:0 · 10 bits"]] },
+  { id: "prores", name: "Apple ProRes", ext: "mov", types: [["proxy", "Proxy", "4:2:2 · 10 bits"], ["lt", "LT", "4:2:2 · 10 bits"], ["422", "422", "4:2:2 · 10 bits"], ["hq", "422 HQ", "4:2:2 · 10 bits"], ["4444", "4444", "4:4:4 · 12 bits · alpha", true], ["xq", "4444 XQ", "4:4:4 · 12 bits · alpha", true]] },
+  { id: "dnxhr", name: "Avid DNxHR", ext: "mov", types: [["lb", "LB", "4:2:2 · 8 bits"], ["sq", "SQ", "4:2:2 · 8 bits"], ["hq", "HQ", "4:2:2 · 8 bits"], ["hqx", "HQX", "4:2:2 · 10 bits"], ["444", "444", "4:4:4 · 10 bits"]] },
+  { id: "qtrle", name: "QuickTime Animation", ext: "mov", types: [["rgb", "RVB", "Sans perte · alpha", true]] },
+  { id: "gif", name: "GIF animé", ext: "gif", types: [["full", "Taille d'origine", "Une palette par image"], ["small", "Léger", "640 px · 15 im/s"]] },
+  { id: "mp3", name: "MP3", ext: "mp3", audio: true, types: [["320", "320 kb/s", ""], ["192", "192 kb/s", ""]] },
+  { id: "aac", name: "AAC", ext: "m4a", audio: true, types: [["256", "256 kb/s", ""], ["128", "128 kb/s", ""]] },
+  { id: "wav", name: "WAV", ext: "wav", audio: true, types: [["16", "16 bits", "PCM"], ["24", "24 bits", "PCM"], ["32f", "32 bits float", "PCM"]] },
+  { id: "flac", name: "FLAC", ext: "flac", audio: true, types: [["src", "Sans perte", "Même profondeur que la source"]] },
+];
+const FPS = ["23.976", "24", "25", "29.97", "30", "50", "60"];
+const conv = { codec: "h264", type: { h264: "std" }, source: "file", fps: "25", seq: null, seqLabel: "" };
+const segButtons = (box, items, current, pick) => box.replaceChildren(...items.map(([v, label]) => {
+  const b = el("button", v === current ? "on" : "", label);
+  b.onclick = () => { pick(v); renderConv(); };
+  return b;
+}));
+function renderConv() {
+  const seq = conv.source === "seq", audioOnly = !seq && stage.classList.contains("audio");
+  let codec = CODECS.find(c => c.id === conv.codec);
+  if ((seq || audioOnly) && (seq ? codec.audio : !codec.audio)) codec = CODECS.find(c => seq ? !c.audio : c.audio), conv.codec = codec.id;
+  const list = [];
+  for (const [title, audio] of [["Vidéo", false], ["Audio", true]]) {
+    list.push(el("h3", "", title));
+    for (const c of CODECS.filter(c => !!c.audio === audio)) {
+      const b = el("button", c.id === conv.codec ? "on" : "");
+      b.append(el("span", "", c.name), el("small", "", "." + c.ext));
+      b.disabled = audio ? seq : audioOnly;
+      b.onclick = () => { conv.codec = c.id; renderConv(); };
+      b.ondblclick = () => $("convGo").click();
+      list.push(b);
+    }
+  }
+  $("convCodecs").replaceChildren(...list);
+  const typeId = codec.types.some(t => t[0] === conv.type[codec.id]) ? conv.type[codec.id] : codec.types[Math.min(1, codec.types.length - 1)][0];
+  conv.type[codec.id] = typeId;
+  const type = codec.types.find(t => t[0] === typeId);
+  segButtons($("convTypes"), codec.types, typeId, v => conv.type[codec.id] = v);
+  $("convSpec").replaceChildren(...type[2].split(" · ").map(part => el("span", "", part)));
+  $("convSpec").parentElement.hidden = !type[2];
+  segButtons($("convFps"), FPS.map(f => [f, f]), conv.fps, v => conv.fps = v);
+  $("convFpsRow").hidden = !seq;
+  $("convAlphaRow").hidden = !type[3];
+  $("convSrc").textContent = seq ? conv.seqLabel || "Aucune séquence choisie" : st.filename || "";
+  $("convPick").hidden = !seq;
+  $("convGo").disabled = seq && !conv.seq;
+  const stem = seq ? (conv.seqLabel.split(/[#.]/)[0].replace(/[_\-.]+$/, "") || "sequence") : (st.filename || "").replace(/\.[^.]+$/, "");
+  $("convOut").textContent = `→ ${stem}_${codec.id}_${typeId}.${codec.ext}`;
+  document.querySelectorAll("#convSource button").forEach(b => b.classList.toggle("on", b.dataset.src === conv.source));
+}
+document.querySelectorAll("#convSource button").forEach(b => b.onclick = () => { conv.source = b.dataset.src; renderConv(); });
+$("convPick").onclick = () => send({ t: "pick-seq" });
+vb.seqPicked = (url, label) => { conv.seq = url; conv.seqLabel = label; renderConv(); };
+$("convBtn").onclick = () => {
+  closeNav();
+  conv.source = stage.classList.contains("idle") ? "seq" : "file";
+  $("convAlpha").checked = !$("alphaBtn").hidden; // the source has transparency: keep it by default
+  renderConv(); modalOpen("convBack");
+};
+$("convGo").onclick = () => {
+  if (conv.source === "file" && stage.classList.contains("idle")) { toast("Ouvrez d'abord un fichier à convertir"); return; }
+  closeModal($("convBack"));
+  const codec = CODECS.find(c => c.id === conv.codec), type = codec.types.find(t => t[0] === conv.type[codec.id]);
+  const seq = conv.source === "seq";
+  send({ t: "convert", preset: `${codec.id}:${type[0]}`, alpha: !!type[3] && $("convAlpha").checked, seq: seq ? conv.seq : null, fps: seq ? conv.fps : null });
+};
+
+// Language: saved in settings.json by Rust (localStorage in a plain browser preview).
+function setLang(code) {
+  i18n.set(code);
+  send({ t: "lang", v: i18n.lang });
+  try { localStorage.setItem("lang", i18n.lang); } catch {}
+}
+vb.lang = saved => {
+  let stored = null;
+  try { stored = localStorage.getItem("lang"); } catch {}
+  setLang(saved || stored || (navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en"));
+};
+
 // Accueil: stops playback and empties the playlist, back to the mascot screen.
 $("homeBtn").onclick = () => { closeNav(); cmd("stop"); };
 $("infoBtn").onclick = () => {
@@ -889,3 +980,6 @@ setInterval(() => {
     gesture();
   }, 15000 + Math.random() * 20000);
 })();
+
+// Plain browser preview (no Rust behind): pick the language right away.
+if (!window.ipc) vb.lang(null);

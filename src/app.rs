@@ -350,7 +350,7 @@ pub fn run() -> Result<(), String> {
     // mpv, drawing into the video window.
     let h = unsafe { (api.create)() };
     if h.is_null() {
-        return Err("Impossible de créer le lecteur mpv.".into());
+        return Err(crate::tr("Impossible de créer le lecteur mpv.", "Could not create the mpv player.").into());
     }
     let m = Mpv { h, ..api };
     m.option("config", "no");
@@ -469,6 +469,7 @@ pub fn run() -> Result<(), String> {
                                 show_update(&webview, tag, *prompt);
                             }
                             eval(&webview, &format!("window.vb && vb.version({})", json!(env!("CARGO_PKG_VERSION"))));
+                            eval(&webview, &format!("window.vb && vb.lang({})", json!(crate::read_settings().get("lang"))));
                             eval(&webview, &format!("window.vb && vb.recent({})", json!(crate::recent_media())));
                             let mut all = Map::new();
                             for p in OBSERVED {
@@ -637,19 +638,37 @@ pub fn run() -> Result<(), String> {
                         "save-frame" => workers.push(save_frame(m)),
                         "copy-frame" => workers.push(copy_frame(m)),
                         "export" => workers.push(crate::editor::export(m)),
+                        "convert" => {
+                            let seq = msg["seq"].as_str().zip(msg["fps"].as_str()).map(|(u, f)| (u.to_string(), f.to_string()));
+                            workers.push(crate::editor::convert(m, s("preset"), msg["alpha"].as_bool() == Some(true), seq));
+                        }
+                        // Convertir › Séquence d'images › Choisir…: one image of it; the page shows the sequence found.
+                        "pick-seq" => {
+                            if let Some(image) = rfd::FileDialog::new()
+                                .set_title(crate::tr("Choisir une image de la séquence", "Pick an image of the sequence"))
+                                .add_filter("Images", &["png", "jpg", "jpeg", "tif", "tiff", "exr", "dpx", "tga", "bmp", "webp"])
+                                .pick_file()
+                            {
+                                match crate::sequence_url(&image).zip(crate::sequence_label(&image)) {
+                                    Some((url, label)) => eval(&webview, &format!("window.vb && vb.seqPicked({}, {})", json!(url), json!(label))),
+                                    None => toast("Cette image n'est pas numérotée (ex. plan_0001.png)"),
+                                }
+                            }
+                        }
+                        "lang" => crate::set_lang(&s("v")),
                         "open" => {
-                            if let Some(file) = rfd::FileDialog::new().set_title("Ouvrir un fichier").pick_file() {
+                            if let Some(file) = rfd::FileDialog::new().set_title(crate::tr("Ouvrir un fichier", "Open a file")).pick_file() {
                                 load_paths(&m, &[file]);
                             }
                         }
                         "open-files" => {
-                            if let Some(files) = rfd::FileDialog::new().set_title("Ouvrir plusieurs fichiers").pick_files() {
+                            if let Some(files) = rfd::FileDialog::new().set_title(crate::tr("Ouvrir plusieurs fichiers", "Open files")).pick_files() {
                                 load_paths(&m, &files);
                             }
                         }
                         // mpv plays a folder as a playlist of the media it contains.
                         "open-folder" => {
-                            if let Some(dir) = rfd::FileDialog::new().set_title("Ouvrir un dossier").pick_folder() {
+                            if let Some(dir) = rfd::FileDialog::new().set_title(crate::tr("Ouvrir un dossier", "Open a folder")).pick_folder() {
                                 load_paths(&m, &[dir]);
                             }
                         }
@@ -677,7 +696,7 @@ pub fn run() -> Result<(), String> {
                         }
                         "import-mask" => {
                             if let Some(file) = rfd::FileDialog::new()
-                                .set_title("Importer un masque")
+                                .set_title(crate::tr("Importer un masque", "Import a mask"))
                                 .add_filter("Images", &["png", "jpg", "jpeg", "webp", "bmp", "gif", "svg"])
                                 .pick_file()
                             {
@@ -693,7 +712,7 @@ pub fn run() -> Result<(), String> {
                         "info" => eval(&webview, &format!("window.vb && vb.info({})", crate::media_info(&m))),
                         "open-subs" => {
                             if let Some(f) = rfd::FileDialog::new()
-                                .set_title("Charger des sous-titres")
+                                .set_title(crate::tr("Charger des sous-titres", "Load subtitles"))
                                 .add_filter("Sous-titres", &["srt", "ass", "ssa", "vtt", "sub"])
                                 .pick_file()
                             {

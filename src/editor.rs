@@ -5,13 +5,18 @@ use crate::{EVENT_END_FILE, EVENT_SHUTDOWN, Mpv};
 use std::path::Path;
 use std::thread;
 
-/// Encoder settings close to the source: same audio sample format, same video family.
-pub fn codecs(ext: &str, video_codec: Option<&str>, audio_format: Option<&str>, alpha: bool) -> Vec<(&'static str, String)> {
-    let pcm = match audio_format.unwrap_or("") {
+/// Uncompressed audio at the source's sample depth.
+fn pcm(audio_format: Option<&str>) -> &'static str {
+    match audio_format.unwrap_or("") {
         f if f.starts_with("float") || f.starts_with("double") => "pcm_f32le",
         f if f.starts_with("s32") || f.starts_with("s24") => "pcm_s24le",
         _ => "pcm_s16le",
-    };
+    }
+}
+
+/// Encoder settings close to the source: same audio sample format, same video family.
+pub fn codecs(ext: &str, video_codec: Option<&str>, audio_format: Option<&str>, alpha: bool) -> Vec<(&'static str, String)> {
+    let pcm = pcm(audio_format);
     match ext {
         "wav" | "wave" => vec![("oac", pcm.into()), ("vid", "no".into())],
         "flac" => vec![("oac", "flac".into()), ("vid", "no".into())],
@@ -39,6 +44,132 @@ pub fn codecs(ext: &str, video_codec: Option<&str>, audio_format: Option<&str>, 
             [video, audio].concat()
         }
     }
+}
+
+/// Every "Convertir" format as "codec:type" (ui/app.js lists the same ids).
+#[cfg(test)] // the page holds the same list; the tests walk this one
+pub const PRESETS: &[&str] = &[
+    "h264:hq", "h264:std", "h264:small", "h265:hq", "h265:std", "h265:small", "av1:hq", "av1:std", "av1:small",
+    "prores:proxy", "prores:lt", "prores:422", "prores:hq", "prores:4444", "prores:xq",
+    "dnxhr:lb", "dnxhr:sq", "dnxhr:hq", "dnxhr:hqx", "dnxhr:444",
+    "qtrle:rgb", "gif:full", "gif:small",
+    "mp3:320", "mp3:192", "aac:256", "aac:128", "wav:16", "wav:24", "wav:32f", "flac:src",
+];
+
+/// "Convertir": output extension and encoder settings for a "codec:type" id. `alpha` keeps the
+/// transparency where the type can carry it (ProRes 4444 / XQ, QuickTime Animation).
+/// The pixel format goes through a filter: mpv ignores `pix_fmt` in ovcopts.
+pub fn preset(id: &str, alpha: bool, audio_format: Option<&str>) -> Option<(&'static str, Vec<(&'static str, String)>)> {
+    let (codec, kind) = id.split_once(':')?;
+    let pcm = pcm(audio_format);
+    let mut v: Vec<(&'static str, String)> = Vec::new();
+    let mut set = |k: &'static str, val: &str| v.push((k, val.to_string()));
+    let fmt = |pix: &str| format!("lavfi=[format={pix}]");
+    let ext = match codec {
+        "h264" | "h265" => {
+            let crf = match (codec, kind) {
+                ("h264", "hq") => 16, ("h264", "std") => 20, ("h264", "small") => 26,
+                ("h265", "hq") => 18, ("h265", "std") => 22, ("h265", "small") => 28,
+                _ => return None,
+            };
+            if codec == "h264" {
+                set("ovc", "libx264");
+                set("ovcopts", &format!("crf={crf},preset=medium"));
+            } else {
+                // No libx265 in libmpv: the graphics card's encoder (NVIDIA, AMD or Intel); see `encode_any`.
+                set("ovc", HEVC_ENCODERS[0]);
+                set("ovcopts", &format!("cq={crf},qp_i={crf},qp_p={crf},quality={crf}"));
+            }
+            set("vf", &fmt("yuv420p"));
+            set("oac", "aac");
+            set("oacopts", "b=256k");
+            "mp4"
+        }
+        "prores" => {
+            let profile = ["proxy", "lt", "422", "hq", "4444", "xq"].iter().position(|k| *k == kind)?;
+            let pix = match (profile >= 4, alpha) { (false, _) => "yuv422p10le", (true, true) => "yuva444p10le", (true, false) => "yuv444p10le" };
+            set("ovc", "prores_ks");
+            set("ovcopts", &format!("profile={profile}"));
+            set("vf", &fmt(pix));
+            set("oac", pcm);
+            "mov"
+        }
+        "dnxhr" => {
+            let pix = match kind { "lb" | "sq" | "hq" => "yuv422p", "hqx" => "yuv422p10le", "444" => "yuv444p10le", _ => return None };
+            set("ovc", "dnxhd");
+            set("ovcopts", &format!("profile=dnxhr_{kind}"));
+            set("vf", &fmt(pix));
+            set("oac", pcm);
+            "mov"
+        }
+        "qtrle" => {
+            set("ovc", "qtrle");
+            set("vf", &fmt(if alpha { "argb" } else { "rgb24" }));
+            set("oac", pcm);
+            "mov"
+        }
+        "av1" => {
+            let crf = match kind { "hq" => 24, "std" => 32, "small" => 40, _ => return None };
+            set("ovc", "libsvtav1");
+            set("ovcopts", &format!("crf={crf},preset=8"));
+            set("vf", &fmt("yuv420p10le"));
+            set("oac", "aac");
+            set("oacopts", "b=256k");
+            "mp4"
+        }
+        "gif" => {
+            // One palette per frame: streams (no second pass) and keeps the colours right.
+            let pre = match kind { "full" => "", "small" => "fps=15,scale=640:-2,", _ => return None };
+            set("ovc", "gif");
+            set("vf", &format!("lavfi=[{pre}split[a][b];[a]palettegen=stats_mode=single[p];[b][p]paletteuse=new=1]"));
+            set("aid", "no");
+            "gif"
+        }
+        "mp3" | "aac" => {
+            let rate = match (codec, kind) { ("mp3", "320" | "192") | ("aac", "256" | "128") => kind, _ => return None };
+            set("oac", if codec == "mp3" { "libmp3lame" } else { "aac" });
+            set("oacopts", &format!("b={rate}k"));
+            set("vid", "no");
+            if codec == "mp3" { "mp3" } else { "m4a" }
+        }
+        "wav" => {
+            set("oac", match kind { "16" => "pcm_s16le", "24" => "pcm_s24le", "32f" => "pcm_f32le", _ => return None });
+            set("vid", "no");
+            "wav"
+        }
+        "flac" => {
+            set("oac", "flac");
+            set("vid", "no");
+            "flac"
+        }
+        _ => return None,
+    };
+    Some((ext, v))
+}
+
+/// H.265 encoders, tried in this order until one works on this PC.
+pub const HEVC_ENCODERS: &[&str] = &["hevc_nvenc", "hevc_amf", "hevc_qsv"];
+
+/// `encode`, retrying H.265 with the next graphics card encoder when one is missing. An encoder
+/// that fails to open leaves an audio-only file: a MOV / MP4 without a video track counts as failed.
+pub fn encode_any(m: &Mpv, src: &str, out: &Path, settings: &[(&str, String)], progress: impl Fn(f64)) -> bool {
+    let video = settings.iter().any(|(k, _)| *k == "ovc");
+    let ovc = settings.iter().find(|(k, _)| *k == "ovc").map(|(_, v)| v.as_str());
+    let encoders: Vec<&str> = if ovc == Some(HEVC_ENCODERS[0]) { HEVC_ENCODERS.to_vec() } else { vec![ovc.unwrap_or("")] };
+    encoders.iter().any(|enc| {
+        let _ = std::fs::remove_file(out);
+        let s: Vec<_> = settings.iter().map(|(k, v)| (*k, if *k == "ovc" { enc.to_string() } else { v.clone() })).collect();
+        encode(m, src, out, None, None, &s, &progress) && (!video || has_video(out))
+    })
+}
+
+/// MOV / MP4: a track with a video handler ("vide") in the moov; other containers pass.
+fn has_video(path: &Path) -> bool {
+    let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if ext != "mov" && ext != "mp4" {
+        return true;
+    }
+    crate::read_moov(&path.to_string_lossy()).is_some_and(|moov| moov.windows(4).any(|w| w == b"vide"))
 }
 
 fn clock(t: f64) -> String {
@@ -104,7 +235,7 @@ pub fn export(m: Mpv) -> thread::JoinHandle<()> {
         let ext = src_path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_else(|| "mp4".into());
         let stem = src_path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let Some(out) = rfd::FileDialog::new()
-            .set_title("Enregistrer l'extrait")
+            .set_title(crate::tr("Enregistrer l'extrait", "Save the clip"))
             .set_file_name(format!("{stem}_extrait.{ext}"))
             .add_filter(ext.to_uppercase(), &[&ext])
             .save_file()
@@ -132,6 +263,48 @@ pub fn export(m: Mpv) -> thread::JoinHandle<()> {
     })
 }
 
+/// "Convertir": the whole open file, or an image sequence (`seq`: its mf:// address and frame
+/// rate), into another format (see `preset`), in the background.
+pub fn convert(m: Mpv, id: String, alpha: bool, seq: Option<(String, String)>) -> thread::JoinHandle<()> {
+    let open = m.get("path").unwrap_or_default();
+    let audio_format = m.get("audio-params/format");
+    thread::spawn(move || {
+        let Some((ext, mut settings)) = preset(&id, alpha, audio_format.as_deref()) else { return };
+        let (src, src_path) = if let Some((url, fps)) = seq {
+            settings.push(("mf-fps", fps));
+            let path = std::path::PathBuf::from(url.trim_start_matches("mf://"));
+            (url, path)
+        } else {
+            if open.is_empty() || open.contains("://") {
+                m.toast("Ouvrez d'abord un fichier à convertir");
+                return;
+            }
+            (open.clone(), std::path::PathBuf::from(&open))
+        };
+        let mut stem = src_path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        if src.starts_with("mf://") {
+            stem = stem.trim_end_matches(|c: char| c.is_ascii_digit() || matches!(c, '*' | '_' | '.' | '-')).to_string(); // shot_* → shot
+        }
+        let Some(out) = rfd::FileDialog::new()
+            .set_title(crate::tr("Convertir", "Convert"))
+            .set_file_name(format!("{stem}_{}.{ext}", id.replace(':', "_")))
+            .add_filter(ext.to_uppercase(), &[ext])
+            .save_file()
+        else {
+            return;
+        };
+        if out == src_path {
+            m.toast("Choisis un autre nom que le fichier d'origine");
+            return;
+        }
+        crate::app::EXPORTING.store(true, std::sync::atomic::Ordering::Relaxed);
+        let ok = encode_any(&m, &src, &out, &settings, |pct| m.toast(&format!("Conversion… {pct:.0} %")));
+        crate::app::EXPORTING.store(false, std::sync::atomic::Ordering::Relaxed);
+        let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        m.toast(&if ok { format!("Fichier converti : {name}") } else { "Échec de la conversion".into() });
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,6 +328,23 @@ mod tests {
     fn h264_mp4_reencodes_with_x264_and_aac() {
         let c = codecs("mp4", Some("h264"), Some("floatp"), false);
         assert!(c.contains(&("ovc", "libx264".into())) && c.contains(&("oac", "aac".into())));
+    }
+
+    #[test]
+    fn convert_presets() {
+        for id in PRESETS {
+            assert!(preset(id, true, None).is_some(), "{id}");
+        }
+        let (ext, c) = preset("prores:4444", true, Some("s24")).unwrap();
+        assert_eq!(ext, "mov");
+        assert!(c.contains(&("ovcopts", "profile=4".into())) && c.contains(&("vf", "lavfi=[format=yuva444p10le]".into())));
+        assert!(c.contains(&("oac", "pcm_s24le".into())));
+        assert!(preset("prores:hq", true, None).unwrap().1.contains(&("vf", "lavfi=[format=yuv422p10le]".into())));
+        assert!(preset("prores:xq", false, None).unwrap().1.contains(&("vf", "lavfi=[format=yuv444p10le]".into())));
+        assert!(preset("dnxhr:hqx", false, None).unwrap().1.contains(&("ovcopts", "profile=dnxhr_hqx".into())));
+        assert_eq!(preset("wav:32f", false, None).unwrap().1, vec![("oac", "pcm_f32le".to_string()), ("vid", "no".to_string())]);
+        assert!(preset("prores:nope", false, None).is_none());
+        assert!(preset("nope", false, None).is_none());
     }
 
     #[test]

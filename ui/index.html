@@ -46,6 +46,7 @@
           <button class="dd" data-act="copy"><i class="ico" data-i="copy"></i><span class="dd-text"><b>Copier la frame</b><small>Prête à coller dans une autre app</small></span><kbd>Ctrl+C</kbd></button>
         </div>
       </div>
+      <div class="nav-item"><button class="nav-btn" id="convBtn">Convertir</button></div>
       <div class="nav-item"><button class="nav-btn" id="infoBtn">Infos</button></div>
     </nav>
     <span class="grow"></span>
@@ -142,6 +143,48 @@
       <div class="progress"><div class="track"><div class="fill" id="updateBar"></div></div><div class="label" id="updateLabel"></div></div>
     </div>
   </div>
+  <div class="modal-back" id="convBack">
+    <div class="modal form conv" role="dialog" aria-labelledby="convTitle">
+      <header class="conv-top">
+        <h2 id="convTitle">Convertir</h2>
+        <div class="seg" id="convSource">
+          <button data-src="file" class="on">Fichier ouvert</button><button data-src="seq">Séquence d'images</button>
+        </div>
+      </header>
+      <div class="conv-body">
+        <nav class="conv-codecs" id="convCodecs" aria-label="Codec"></nav>
+        <section class="conv-detail">
+          <div class="conv-field">
+            <span class="conv-label">Source</span>
+            <div class="conv-src"><span class="conv-value mono" id="convSrc"></span><button class="pick" id="convPick">Choisir…</button></div>
+          </div>
+          <div class="conv-field">
+            <span class="conv-label">Type</span>
+            <div class="seg wrap" id="convTypes"></div>
+          </div>
+          <div class="conv-field">
+            <span class="conv-label"></span>
+            <span class="conv-value muted" id="convSpec"></span>
+          </div>
+          <div class="conv-field" id="convFpsRow">
+            <span class="conv-label">Cadence</span>
+            <div class="seg wrap" id="convFps"></div>
+          </div>
+          <div class="conv-field" id="convAlphaRow">
+            <span class="conv-label">Alpha</span>
+            <label class="never"><input type="checkbox" id="convAlpha"> Garder la transparence</label>
+          </div>
+        </section>
+      </div>
+      <footer class="conv-foot">
+        <span class="conv-out mono" id="convOut"></span>
+        <div class="actions">
+          <button class="later" data-close>Annuler</button>
+          <button class="go" id="convGo">Convertir…</button>
+        </div>
+      </footer>
+    </div>
+  </div>
   <div class="modal-back" id="netBack">
     <div class="modal form" role="dialog" aria-labelledby="netTitle">
       <h2 id="netTitle">Ouvrir un flux réseau</h2>
@@ -192,6 +235,7 @@
   <div class="grip se" data-dir="se"></div><div class="grip sw" data-dir="sw"></div>
 </div>
 
+<script src="i18n.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

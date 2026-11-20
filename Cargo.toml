@@ -1,6 +1,6 @@
 [package]
 name = "visiblement"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2024"
 description = "Visiblement, a fast GPU-accelerated video player for Windows built on libmpv"
 license = "MIT"
@@ -13,6 +13,9 @@ rfd = "0.18.0"
 serde_json = "1.0.154"
 tao = "0.37.3"
 wry = "0.57.3"
+
+[workspace]
+members = ["thumbs"]
 
 [profile.release]
 opt-level = 3
