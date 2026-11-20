@@ -353,6 +353,25 @@ fn set_never_ask_update(never: bool) {
     write_settings(settings);
 }
 
+fn save_volume(volume: Option<String>, mute: Option<String>) {
+    let mut settings = read_settings();
+    for (k, v) in [("volume", volume), ("mute", mute)] {
+        if let Some(v) = v {
+            settings.insert(k.into(), v.into());
+        }
+    }
+    write_settings(settings);
+}
+
+/// mpv options restoring the last session's volume / mute (settings.json "volume", "mute").
+fn saved_volume() -> Vec<(&'static str, String)> {
+    let settings = read_settings();
+    ["volume", "mute"]
+        .into_iter()
+        .filter_map(|k| settings.get(k).and_then(serde_json::Value::as_str).map(|v| (k, v.to_string())))
+        .collect()
+}
+
 const RECENT_MAX: usize = 10;
 
 /// Recently opened media, newest first (settings.json "recent").

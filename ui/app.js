@@ -250,16 +250,11 @@ $("stepBack").onclick = () => cmd("frame-back-step");
 $("stepFwd").onclick = () => cmd("frame-step");
 $("fs").onclick = () => send({ t: "win", a: "fs" });
 
-// Click on the picture: play / pause; double-click: fullscreen (like YouTube).
-let clickTimer;
+// Click on the picture: play / pause (no double-click fullscreen: F or the button do it).
 stage.addEventListener("click", ev => {
   if (ev.target.closest(".controls, .menu") || stage.classList.contains("idle")) return;
   if (looked) { looked = false; return; } // end of a 360° drag, not a click
-  clearTimeout(clickTimer); clickTimer = setTimeout(togglePlay, 220);
-});
-stage.addEventListener("dblclick", ev => {
-  if (ev.target.closest(".controls, .menu")) return;
-  clearTimeout(clickTimer); $("fs").onclick();
+  togglePlay();
 });
 
 // Scrubbing: press and drag on the timeline, the picture follows in real time.

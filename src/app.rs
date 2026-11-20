@@ -285,6 +285,7 @@ fn close(ui: &Window, video: &Window, m: &Mpv) {
     }
     ui.set_visible(false);
     video.set_visible(false);
+    crate::save_volume(m.get("volume"), m.get("mute"));
     m.cmd(&["quit"]);
     thread::spawn(|| {
         thread::sleep(Duration::from_millis(1500));
@@ -356,6 +357,10 @@ pub fn run() -> Result<(), String> {
     m.option("wid", &video.hwnd().to_string());
     for (k, v) in OPTIONS {
         m.option(k, v);
+    }
+    // Volume and mute as they were when the app last closed.
+    for (k, v) in crate::saved_volume() {
+        m.option(k, &v);
     }
     // Web video pages (YouTube…): mpv's ytdl hook uses the yt-dlp the app downloads on demand.
     if let Some(ytdlp) = crate::stream::ytdlp_path() {
