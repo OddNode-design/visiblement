@@ -571,7 +571,7 @@ function closeNav() { const was = navItems.some(i => i.classList.contains("open"
 navItems.forEach(item => {
   item.addEventListener("mouseenter", () => { clearTimeout(navTimer); navTimer = setTimeout(() => openNav(item), navItems.some(i => i.classList.contains("open")) ? 0 : 90); });
   item.addEventListener("mouseleave", () => { clearTimeout(navTimer); navTimer = setTimeout(closeNav, 220); });
-  item.querySelector(".nav-btn").addEventListener("click", () => item.classList.contains("open") ? closeNav() : openNav(item));
+  item.querySelector(".nav-btn").addEventListener("click", () => { clearTimeout(navTimer); openNav(item); });
 });
 addEventListener("pointerdown", ev => { if (!ev.target.closest(".nav")) closeNav(); });
 
