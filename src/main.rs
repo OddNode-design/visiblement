@@ -278,6 +278,23 @@ fn parse_version(v: &str) -> Vec<u32> {
     v.trim().trim_start_matches('v').split('.').map(|p| p.parse().unwrap_or(0)).collect()
 }
 
+/// Newest release tag from the redirect of github.com/<repo>/releases/latest (no API quota).
+fn latest_tag_by_redirect() -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let out = std::process::Command::new("curl.exe")
+        .args(["-s", "-m", "5", "-o", "NUL", "-w", "%{redirect_url}"])
+        .arg(format!("https://github.com/{REPO}/releases/latest"))
+        .creation_flags(0x0800_0000)
+        .output()
+        .ok()?;
+    tag_from_release_url(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn tag_from_release_url(url: &str) -> Option<String> {
+    let tag = url.trim().rsplit_once("/releases/tag/")?.1;
+    (tag.starts_with('v') && tag.len() > 1).then(|| tag.to_string())
+}
+
 /// Extracts "tag_name" from the GitHub releases API answer without a JSON dependency.
 fn tag_name(json: &str) -> Option<&str> {
     let rest = &json[json.find("\"tag_name\"")? + 10..];
@@ -306,19 +323,35 @@ fn check_for_update(manual: bool) {
             return;
         };
         let body = String::from_utf8_lossy(&out.stdout);
-        let Some(tag) = tag_name(&body) else {
-            if manual {
-                app::toast("Impossible de vérifier les mises à jour (hors ligne ?)");
-            }
-            return;
+        // The API allows 60 anonymous calls an hour per IP address. When it refuses (or answers
+        // nothing), the github.com "latest release" page still redirects to the newest tag, and the
+        // .msi sits at a predictable address.
+        let (tag, asset) = match tag_name(&body) {
+            Some(tag) => (tag.to_string(), update::msi_asset(&body)),
+            None => match latest_tag_by_redirect() {
+                Some(tag) => {
+                    let url = format!(
+                        "https://github.com/{REPO}/releases/download/{tag}/Visiblement-{}-x64.msi",
+                        tag.trim_start_matches('v')
+                    );
+                    (tag, Some((url, 0)))
+                }
+                None => {
+                    if manual {
+                        app::toast("Impossible de vérifier les mises à jour (hors ligne ?)");
+                    }
+                    return;
+                }
+            },
         };
+        let tag = tag.as_str();
         if parse_version(tag) <= parse_version(env!("CARGO_PKG_VERSION")) {
             if manual {
                 app::toast(&format!("Visiblement est à jour ({})", env!("CARGO_PKG_VERSION")));
             }
             return;
         }
-        update::remember(tag, update::msi_asset(&body));
+        update::remember(tag, asset);
         app::offer_update(tag, manual || !never_ask_update());
     });
 }
@@ -743,5 +776,8 @@ mod tests {
         assert!(parse_version("v0.1.0") <= parse_version("0.1.0"));
         assert_eq!(tag_name(r#"{"url":"x","tag_name": "v1.2.0","name":"y"}"#), Some("v1.2.0"));
         assert_eq!(tag_name(r#"{"message":"Not Found"}"#), None);
+        assert_eq!(tag_from_release_url("https://github.com/o/r/releases/tag/v0.1.10\n").as_deref(), Some("v0.1.10"));
+        assert_eq!(tag_from_release_url("https://github.com/o/r/releases"), None);
+        assert_eq!(tag_from_release_url(""), None);
     }
 }
