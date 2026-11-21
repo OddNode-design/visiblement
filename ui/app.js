@@ -512,12 +512,12 @@ function moveGrab(ev) {
 function endGrab() { if (grabbing) { grabbing = null; send({ t: "win", a: "grab-end" }); } }
 $("titlebar").addEventListener("pointerdown", ev => {
   // (pointerdown has no click count: detail is always 0, so no filter on it)
-  if (ev.button === 0 && !ev.target.closest(".wbtn, .nav")) startGrab(ev, "");
+  if (ev.button === 0 && !ev.target.closest(".wbtn, .nav, .burger, .home")) startGrab(ev, "");
 });
 $("titlebar").addEventListener("pointermove", moveGrab);
 $("titlebar").addEventListener("pointerup", endGrab);
 $("titlebar").addEventListener("lostpointercapture", endGrab);
-$("titlebar").addEventListener("dblclick", ev => { if (!ev.target.closest(".wbtn, .nav")) send({ t: "win", a: "max" }); });
+$("titlebar").addEventListener("dblclick", ev => { if (!ev.target.closest(".wbtn, .nav, .burger, .home")) send({ t: "win", a: "max" }); });
 $("wMin").onclick = () => send({ t: "win", a: "min" });
 $("wMax").onclick = () => send({ t: "win", a: "max" });
 $("wClose").onclick = () => send({ t: "win", a: "close" });
@@ -595,13 +595,42 @@ $("updateLater").onclick = () => closeUpdate(false);
 const navItems = [...document.querySelectorAll(".nav-item")];
 let navTimer;
 function openNav(item) { navItems.forEach(i => i.classList.toggle("open", i === item && !!item.querySelector(".dropdown"))); closeAll(); hideTip(); }
-function closeNav() { const was = navItems.some(i => i.classList.contains("open")); navItems.forEach(i => i.classList.remove("open")); return was; }
+function closeNav() {
+  const was = navItems.some(i => i.classList.contains("open")) || $("titlebar").classList.contains("menu-open");
+  navItems.forEach(i => i.classList.remove("open"));
+  setBurger(false);
+  return was;
+}
+function setBurger(open) { $("titlebar").classList.toggle("menu-open", open); $("burger").setAttribute("aria-expanded", open); }
+$("burger").onclick = () => { const open = !$("titlebar").classList.contains("menu-open"); closeNav(); setBurger(open); };
+
+// Responsive title bar: the centred navigation needs room on both sides of it. When the window is
+// too narrow, it folds into the burger; the title takes what is left, then the resolution goes.
+function fitTitleBar() {
+  const bar = $("titlebar");
+  // Measured laid out in a row (not as the burger panel); dropdowns are left out of the width.
+  bar.classList.remove("compact");
+  const navW = navItems.reduce((w, i) => w + i.offsetWidth, 6 * (navItems.length - 1)), barW = bar.clientWidth;
+  const right = [...bar.querySelectorAll(".pos, .wbtn")].reduce((w, e) => w + e.offsetWidth + 10, 4);
+  const left = 12 + 22 + 10; // padding, logo, gap
+  const compact = barW / 2 - navW / 2 < Math.max(left + 90, right) + 12;
+  bar.classList.toggle("compact", compact);
+  if (!compact) setBurger(false);
+  const resW = $("res").textContent ? $("res").offsetWidth + 10 : 0;
+  const room = compact ? barW - right - left - 42 - 12 : barW / 2 - navW / 2 - left - 16;
+  bar.classList.toggle("no-res", room - resW < 90);
+  bar.style.setProperty("--title-max", Math.max(40, room - (room - resW < 90 ? 0 : resW)) + "px");
+}
+new ResizeObserver(fitTitleBar).observe($("titlebar"));
+new MutationObserver(fitTitleBar).observe($("pos"), { childList: true, characterData: true, subtree: true });
+new MutationObserver(fitTitleBar).observe($("res"), { childList: true, characterData: true, subtree: true });
 navItems.forEach(item => {
   item.addEventListener("mouseenter", () => { clearTimeout(navTimer); navTimer = setTimeout(() => openNav(item), navItems.some(i => i.classList.contains("open")) ? 0 : 90); });
-  item.addEventListener("mouseleave", () => { clearTimeout(navTimer); navTimer = setTimeout(closeNav, 220); });
+  // Leaving an item closes its menu only: the burger panel stays open.
+  item.addEventListener("mouseleave", () => { clearTimeout(navTimer); navTimer = setTimeout(() => navItems.forEach(i => i.classList.remove("open")), 220); });
   item.querySelector(".nav-btn").addEventListener("click", () => { clearTimeout(navTimer); openNav(item); });
 });
-addEventListener("pointerdown", ev => { if (!ev.target.closest(".nav")) closeNav(); });
+addEventListener("pointerdown", ev => { if (!ev.target.closest(".nav, .burger")) closeNav(); });
 
 const modalOpen = id => { closeNav(); closeAll(); $(id).classList.add("open"); };
 function closeModal(back) { back.classList.remove("open"); if (back.id === "infoBack") clearInterval(infoTimer); }
@@ -817,6 +846,7 @@ $("convGo").onclick = () => {
 // Language: saved in settings.json by Rust (localStorage in a plain browser preview).
 function setLang(code) {
   i18n.set(code);
+  fitTitleBar(); // English labels have other widths
   send({ t: "lang", v: i18n.lang });
   try { localStorage.setItem("lang", i18n.lang); } catch {}
 }
@@ -826,7 +856,7 @@ vb.lang = saved => {
   setLang(saved || stored || (navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en"));
 };
 
-// Accueil: stops playback and empties the playlist, back to the mascot screen.
+// The logo (Accueil): stops playback and empties the playlist, back to the mascot screen.
 $("homeBtn").onclick = () => { closeNav(); cmd("stop"); };
 $("infoBtn").onclick = () => {
   closeNav(); modalOpen("infoBack"); send({ t: "info" });

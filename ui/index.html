@@ -8,11 +8,13 @@
 <body>
 <div class="window" id="win">
   <div class="titlebar" id="titlebar">
-    <img src="icon.svg" alt="">
+    <!-- The logo takes you back to the home screen -->
+    <button class="home" id="homeBtn" aria-label="Accueil"><img src="icon.svg" alt=""></button>
+    <!-- Shown instead of the navigation when the bar is too narrow for it -->
+    <button class="burger" id="burger" aria-label="Menu" aria-expanded="false" aria-controls="nav"><span></span><span></span><span></span></button>
     <span class="title" id="title">Visiblement</span>
     <span class="res" id="res"></span>
     <nav class="nav" id="nav">
-      <div class="nav-item"><button class="nav-btn" id="homeBtn">Accueil</button></div>
       <div class="nav-item">
         <button class="nav-btn">Média <i class="ico chev" data-i="chevron-down"></i></button>
         <div class="dropdown">
