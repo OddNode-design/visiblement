@@ -39,7 +39,7 @@ window.vb = {
     $("updateGo").textContent = canInstall ? "Installer" : "Télécharger";
     $("updateText").innerHTML = `Visiblement <b>${v}</b> est prête. Tu as la version ${current}.`;
     $("updBtn").classList.add("available");
-    $("updText").textContent = `Mise à jour ${v} disponible`;
+    $("updBtn").setAttribute("aria-label", `Mettre à jour vers la version ${v}`);
     if (prompt) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
   },
   // Download progress (0-100), then "install" while Windows Installer takes over.
@@ -55,7 +55,7 @@ window.vb = {
     $("updateBack").classList.add("open");
     toast("Échec de la mise à jour : télécharge-la depuis la page des versions");
   },
-  version(v) { if (!$("updBtn").classList.contains("available")) $("updText").textContent = `Version ${v} · Rechercher une mise à jour`; },
+  version() {},
   maximized(on) { win.classList.toggle("maximized", on); swapIcon($("wMax").querySelector(".ico"), on ? "copy" : "square"); },
   fullscreen(on) { win.classList.toggle("fullscreen", on); win.classList.remove("peek"); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
 };
@@ -587,11 +587,8 @@ $("updateGo").onclick = () => {
   send({ t: "install-update", never: $("updateNever").checked });
   vb.updateProgress(0);
 };
-// The discreet button: shows the prompt again if an update is known, otherwise checks now.
-$("updBtn").onclick = () => {
-  if ($("updBtn").classList.contains("available")) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
-  else { $("updText").textContent = "Recherche…"; send({ t: "check-update" }); }
-};
+// The round button (shown only when an update exists): the prompt again.
+$("updBtn").onclick = () => { $("updateNever").checked = false; $("updateBack").classList.add("open"); };
 $("updateLater").onclick = () => closeUpdate(false);
 
 // --- Navigation bar (Média / Éditer / Infos): menus open on hover, or on click

@@ -66,7 +66,14 @@
         <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement"><g fill="#121114" id="eyes"></g></svg>
       </div>
       <div class="hint">Glisse une vidéo ici ou clic droit pour le menu</div>
-      <button class="upd" id="updBtn"><span class="dot"></span><span id="updText">Rechercher une mise à jour</span></button>
+      <!-- Only when an update exists: the arrow dives into the line on hover and drops back in from the top -->
+      <button class="upd" id="updBtn" aria-label="Mettre à jour">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <clipPath id="updClip"><rect width="24" height="19.5"/></clipPath>
+          <g clip-path="url(#updClip)"><g class="arrow"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/></g></g>
+          <path d="M19 21H5"/>
+        </svg>
+      </button>
     </div>
 
     <canvas class="mask" id="mask"></canvas>
