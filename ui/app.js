@@ -589,6 +589,9 @@ $("updateGo").onclick = () => {
 };
 // The round button (shown only when an update exists): the prompt again.
 $("updBtn").onclick = () => { $("updateNever").checked = false; $("updateBack").classList.add("open"); };
+// The dive starts on hover and always plays to the end (leaving early no longer cuts it).
+$("updBtn").addEventListener("mouseenter", () => $("updBtn").classList.add("diving"));
+$("updBtn").addEventListener("animationend", () => $("updBtn").classList.remove("diving"));
 $("updateLater").onclick = () => closeUpdate(false);
 
 // --- Navigation bar (Média / Éditer / Infos): menus open on hover, or on click
