@@ -87,10 +87,10 @@ mpv dessine l'image dans une première fenêtre. Une seconde fenêtre, transpare
 Installez [WiX Toolset 5](https://wixtoolset.org) avec `dotnet tool install --global wix --version 5.0.2`, puis :
 
 ```powershell
-wix build installer\visiblement.wxs -arch x64 -d Version=0.1.16 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-0.1.16-x64.msi
+wix build installer\visiblement.wxs -arch x64 -d Version=1.0.0 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-1.0.0-x64.msi
 ```
 
-Remplacez `0.1.16` par la version inscrite dans `Cargo.toml`.
+Remplacez `1.0.0` par la version inscrite dans `Cargo.toml`.
 
 ## Crédits et licences
 

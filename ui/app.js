@@ -29,8 +29,8 @@ let scrubbing = false;
 window.vb = {
   update(changes) { Object.assign(st, changes); render(); },
   loading(on) { on ? startLoading() : stopLoading(); },
-  toast: msg => toast(msg),
-  drag(on) { stage.classList.toggle("dragging", on); },
+  toast: msg => /^Frame (copiée|enregistrée)/.test(msg) ? notice(msg) : toast(msg),
+  drag(on, x, y) { stage.classList.toggle("dragging", on); plDropMark(on ? plDropIndex(x, y) : null); },
   // Startup check found a newer GitHub release (src/main.rs check_for_update).
   // prompt false: "Ne plus demander" was ticked, so only the discreet button lights up.
   updateAvailable({ latest, current, prompt, installable }) {
@@ -91,8 +91,11 @@ function render() {
 
   const paused = st.pause === "yes";
   stage.classList.toggle("playing", !paused && !idle);
-  swapIcon($("playIcon"), paused ? "play" : "pause");
-  $("play").dataset.tip = paused ? "Lecture (Espace)" : "Pause (Espace)";
+  // At the end of the last media (mpv holds its last frame): Rejouer instead of Lecture.
+  const ended = st["eof-reached"] === "yes" && !idle;
+  swapIcon($("playIcon"), ended ? "rotate-ccw" : paused ? "play" : "pause");
+  $("play").dataset.tip = ended ? "Rejouer (Espace)" : paused ? "Lecture (Espace)" : "Pause (Espace)";
+  renderPlaylist();
 
   renderVolume();
   renderMarks(d);
@@ -262,7 +265,10 @@ function startLoading() { if (!loaderRaf) { loadingSince = performance.now(); lo
 function stopLoading() { cancelAnimationFrame(loaderRaf); loaderRaf = 0; $("loader").classList.remove("show"); }
 
 // --- Transport
-const togglePlay = () => cmd("cycle", "pause");
+const togglePlay = () => {
+  if (st["eof-reached"] === "yes") { cmd("seek", 0, "absolute"); cmd("set", "pause", "no"); } // Rejouer
+  else cmd("cycle", "pause");
+};
 $("play").onclick = togglePlay;
 $("prev").onclick = () => cmd("playlist-prev");
 $("next").onclick = () => cmd("playlist-next");
@@ -393,8 +399,10 @@ function popover(btn, menu, build) {
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const trackName = tr => [tr.title, tr.lang && tr.lang.toUpperCase()].filter(Boolean).join(" · ") || `Piste ${tr.id}`;
 
-function buildSubs() {
-  const m = $("subsMenu"), tracks = (json("track-list") || []).filter(t => t.type === "sub");
+function buildSubs() { $("subsMenu").replaceChildren(...subsItems()); }
+// The subtitle choices: in their own menu, or inside the settings when the bar is too narrow.
+function subsItems() {
+  const tracks = (json("track-list") || []).filter(t => t.type === "sub");
   const sid = st.sid;
   const items = [el("div", "head", "Sous-titres")];
   const off = el("div", "item" + (sid === "no" || !tracks.some(t => t.selected) ? " checked" : ""), "Désactivés");
@@ -408,7 +416,7 @@ function buildSubs() {
   const load = el("div", "item", "Charger un fichier…");
   load.onclick = () => { closeAll(); send({ t: "open-subs" }); };
   items.push(el("div", "sep"), load);
-  m.replaceChildren(...items);
+  return items;
 }
 function buildSettings() {
   const m = $("setMenu");
@@ -420,10 +428,19 @@ function buildSettings() {
   }
   const loop = el("div", "item" + (st["loop-file"] === "inf" ? " checked" : ""), "Lire en boucle");
   loop.onclick = () => { cmd("set", "loop-file", st["loop-file"] === "inf" ? "no" : "inf"); closeAll(); };
-  // keep-open=yes moves on to the next file of the folder; "always" stops at the end of each file.
-  const chain = el("div", "item" + (st["keep-open"] !== "always" ? " checked" : ""), "Enchaîner le dossier");
-  chain.onclick = () => { cmd("set", "keep-open", st["keep-open"] === "always" ? "yes" : "always"); closeAll(); };
-  const items = [el("div", "head", "Vitesse"), speeds, el("div", "sep"), loop, chain];
+  const items = [el("div", "head", "Vitesse"), speeds, el("div", "sep"), loop];
+  // Narrow bar: the buttons it hides live here (like the title bar's burger).
+  if (document.querySelector(".bar").classList.contains("compact")) {
+    const list = el("div", "item" + ($("playlist").classList.contains("open") ? " checked" : ""), "Liste de lecture");
+    list.onclick = () => { closeAll(); togglePlaylist(); };
+    items.push(list);
+    if (!$("alphaBtn").hidden) {
+      const tiles = el("div", "item" + (st.background === "tiles" ? " checked" : ""), "Damier de transparence");
+      tiles.onclick = () => { closeAll(); $("alphaBtn").onclick(); };
+      items.push(tiles);
+    }
+    items.push(el("div", "sep"), ...subsItems());
+  }
   const audios = (json("track-list") || []).filter(t => t.type === "audio");
   if (audios.length > 1) {
     items.push(el("div", "sep"), el("div", "head", "Piste audio"));
@@ -455,6 +472,15 @@ let toastTimer;
 function toast(msg) {
   $("toast").textContent = msg; $("toast").classList.add("show");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 1800);
+}
+// Confirmation of a copied or saved frame, at the top: the menu that asked for it is gone by then.
+let noticeTimer;
+function notice(msg) {
+  $("noticeText").textContent = msg;
+  const n = $("notice");
+  n.classList.remove("show"); void n.offsetWidth; // replay the drop for a second copy in a row
+  n.classList.add("show");
+  clearTimeout(noticeTimer); noticeTimer = setTimeout(() => n.classList.remove("show"), 2000);
 }
 
 // Editor: B / N mark the selection (mpv's A-B loop previews it), Ctrl+E exports it.
@@ -562,6 +588,7 @@ addEventListener("keydown", ev => {
   else if (k === "l") { cmd("set", "loop-file", st["loop-file"] === "inf" ? "no" : "inf"); toast(st["loop-file"] === "inf" ? "Boucle désactivée" : "Lecture en boucle"); }
   else if (k === "s") $("subsBtn").click();
   else if (k === "v") actions.toggle360();
+  else if (k === "p") togglePlaylist();
   else if (k === "b") markIn();
   else if (k === "n") markOut();
 });
@@ -764,8 +791,9 @@ function renderInfo() {
   }
   $("infoBody").replaceChildren(...body);
 }
-function moveTabPill() {
-  const on = $("infoTabs").querySelector("button.on"), pill = $("infoTabs").querySelector(".pill");
+// Slides a tab switcher's white pill under its selected button (Infos tabs, Convertir source).
+function moveTabPill(box = $("infoTabs")) {
+  const on = box.querySelector("button.on"), pill = box.querySelector(".pill");
   pill.style.width = on.offsetWidth + "px"; pill.style.translate = (on.offsetLeft - 3) + "px 0";
 }
 $("infoTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
@@ -828,6 +856,7 @@ function renderConv() {
   const stem = seq ? (conv.seqLabel.split(/[#.]/)[0].replace(/[_\-.]+$/, "") || "sequence") : (st.filename || "").replace(/\.[^.]+$/, "");
   $("convOut").textContent = `→ ${stem}_${codec.id}_${typeId}.${codec.ext}`;
   document.querySelectorAll("#convSource button").forEach(b => b.classList.toggle("on", b.dataset.src === conv.source));
+  moveTabPill($("convSource"));
 }
 document.querySelectorAll("#convSource button").forEach(b => b.onclick = () => { conv.source = b.dataset.src; renderConv(); });
 $("convPick").onclick = () => send({ t: "pick-seq" });
@@ -859,11 +888,89 @@ vb.lang = saved => {
   setLang(saved || stored || (navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en"));
 };
 
+// --- Playlist: mpv's own list (one file after another; keep-open=yes moves on, stops after the last).
+let plKey = "", plDrag = null;
+const plEntries = () => json("playlist") || [];
+function togglePlaylist(open = !$("playlist").classList.contains("open")) {
+  $("playlist").classList.toggle("open", open);
+  $("listBtn").classList.toggle("on", open);
+  renderPlaylist();
+}
+function renderPlaylist() {
+  if (plDrag || !$("playlist").classList.contains("open")) return;
+  const list = plEntries();
+  const key = JSON.stringify(list.map(e => [e.filename, !!e.current]));
+  if (key === plKey) return;
+  plKey = key;
+  $("plCount").textContent = list.length ? String(list.length) : "";
+  $("plEmpty").hidden = list.length > 0;
+  $("plItems").replaceChildren(...list.map((e, i) => {
+    const li = el("li", e.current ? "current" : "");
+    li.dataset.i = i;
+    const rm = el("button", "rm"); rm.setAttribute("aria-label", "Retirer");
+    const x = el("i", "ico"); x.dataset.i = "x"; setSrc(x); rm.append(x);
+    rm.onclick = ev => { ev.stopPropagation(); cmd("playlist-remove", i); };
+    li.append(el("span", "n", String(i + 1)), el("span", "name", e.title || (e.filename || "").split(/[\\/]/).pop()), rm);
+    li.title = e.filename || "";
+    return li;
+  }));
+}
+$("listBtn").onclick = () => togglePlaylist();
+$("plAdd").onclick = () => send({ t: "open-files", append: true });
+// Files dragged over the window (Rust gives the cursor in physical pixels). With the list open,
+// a line follows the cursor between rows and the files land there (at the end outside the list);
+// with it closed they replace what plays.
+function plDropIndex(x, y) {
+  if (!$("playlist").classList.contains("open")) return null;
+  const cy = y / devicePixelRatio, cx = x / devicePixelRatio, rows = [...$("plItems").children];
+  const box = $("playlist").getBoundingClientRect();
+  if (cx < box.left || cx > box.right || cy < box.top || cy > box.bottom) return rows.length;
+  for (const r of rows) { const b = r.getBoundingClientRect(); if (cy < b.top + b.height / 2) return +r.dataset.i; }
+  return rows.length;
+}
+function plDropMark(at) {
+  stage.classList.toggle("drop-list", at !== null);
+  const rows = [...$("plItems").children];
+  rows.forEach(r => r.classList.remove("drop-before", "drop-after"));
+  if (at === null || !rows.length) return;
+  if (at < rows.length) rows[at].classList.add("drop-before"); else rows.at(-1).classList.add("drop-after");
+}
+vb.dropped = (paths, x, y) => {
+  const at = plDropIndex(x ?? 0, y ?? 0);
+  plDropMark(null);
+  send(at === null ? { t: "load-paths", paths, append: false } : { t: "load-paths", paths, at });
+};
+// Click a row: play it. Drag a row: move it (a line shows where it lands).
+$("plItems").addEventListener("pointerdown", ev => {
+  const li = ev.target.closest("li");
+  if (!li || ev.button !== 0 || ev.target.closest(".rm")) return;
+  plDrag = { from: +li.dataset.i, y: ev.clientY, moved: false, to: null, li };
+  li.setPointerCapture(ev.pointerId);
+});
+$("plItems").addEventListener("pointermove", ev => {
+  if (!plDrag) return;
+  if (!plDrag.moved && Math.abs(ev.clientY - plDrag.y) < 5) return;
+  plDrag.moved = true; plDrag.li.classList.add("lifted");
+  const rows = [...$("plItems").children];
+  rows.forEach(r => r.classList.remove("drop-before", "drop-after"));
+  let to = rows.length;
+  for (const r of rows) { const b = r.getBoundingClientRect(); if (ev.clientY < b.top + b.height / 2) { to = +r.dataset.i; break; } }
+  plDrag.to = to;
+  if (to < rows.length) rows[to].classList.add("drop-before"); else rows.at(-1)?.classList.add("drop-after");
+});
+$("plItems").addEventListener("pointerup", () => {
+  const d = plDrag; plDrag = null; if (!d) return;
+  [...$("plItems").children].forEach(r => r.classList.remove("drop-before", "drop-after", "lifted"));
+  if (!d.moved) cmd("playlist-play-index", d.from);
+  else if (d.to !== null && d.to !== d.from && d.to !== d.from + 1) cmd("playlist-move", d.from, d.to); // lands before entry `to`
+  plKey = ""; renderPlaylist();
+});
+
 // The logo (Accueil): stops playback and empties the playlist, back to the mascot screen.
 $("homeBtn").onclick = () => { closeNav(); cmd("stop"); };
 $("infoBtn").onclick = () => {
   closeNav(); modalOpen("infoBack"); send({ t: "info" });
-  requestAnimationFrame(moveTabPill);
+  requestAnimationFrame(() => moveTabPill());
   clearInterval(infoTimer); infoTimer = setInterval(() => { if (infoTab === "stats") send({ t: "info" }); }, 1000);
 };
 
@@ -1010,6 +1117,26 @@ setInterval(() => {
     gesture();
   }, 15000 + Math.random() * 20000);
 })();
+
+// Controls hidden: Rust stops sending the playback clock (up to 30 page updates a second for
+// nothing on screen) and sends the latest values as soon as they show again.
+let uiQuiet = false;
+new MutationObserver(() => {
+  const quiet = stage.classList.contains("hide-ui");
+  if (quiet !== uiQuiet) { uiQuiet = quiet; send({ t: "quiet", on: quiet }); }
+}).observe(stage, { attributes: true, attributeFilter: ["class"] });
+
+// Player bar too narrow for both pills: playlist, subtitles and checkerboard fold into the settings.
+function fitBar() {
+  const bar = document.querySelector(".bar");
+  bar.classList.remove("compact", "tight");
+  const [left, , right] = bar.children;
+  const over = () => left.scrollWidth + right.scrollWidth + 16 > bar.clientWidth;
+  if (over()) bar.classList.add("compact");
+  if (over()) bar.classList.add("tight"); // still too wide: frame number, volume slider and frame steps go
+}
+new ResizeObserver(fitBar).observe(document.querySelector(".bar"));
+new MutationObserver(fitBar).observe($("alphaBtn"), { attributes: true, attributeFilter: ["hidden"] });
 
 // Plain browser preview (no Rust behind): pick the language right away.
 if (!window.ipc) vb.lang(null);

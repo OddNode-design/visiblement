@@ -197,6 +197,12 @@ pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, se
     if let Some(log) = std::env::var_os("VISIBLEMENT_LOG") {
         enc.option("log-file", &format!("{}.export.txt", log.to_string_lossy()));
     }
+    // MOV / MP4 video: no edit list. mpv cannot tell the muxer how long the last frame lasts, so the
+    // edit list it wrote ended one frame early and players dropped the last frame (24 of 25).
+    let ext = out.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if matches!(ext.as_str(), "mov" | "mp4" | "m4v") && settings.iter().any(|(k, _)| *k == "ovc") {
+        enc.option("ofopts", "use_editlist=0");
+    }
     for (k, v) in settings {
         enc.option(k, v);
     }

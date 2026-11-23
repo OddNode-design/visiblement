@@ -59,6 +59,13 @@
   </div>
 
   <div class="stage idle" id="stage">
+    <!-- Playlist: drop videos on it (or add them) to play them one after another; drag rows to reorder -->
+    <aside class="playlist" id="playlist" aria-label="Liste de lecture">
+      <header><h2>Liste de lecture</h2><span class="count" id="plCount"></span></header>
+      <ol id="plItems"></ol>
+      <p class="pl-empty" id="plEmpty">Glissez des vidéos ici pour les lire à la suite.</p>
+      <footer><button id="plAdd"><i class="ico" data-i="list-plus"></i>Ajouter des fichiers…</button></footer>
+    </aside>
     <div class="mascot-screen">
       <canvas class="mist" id="mist" width="256" height="256"></canvas>
       <!-- Mascot: still layers the GPU only turns (no repaint), the eyes on top -->
@@ -103,6 +110,7 @@
         <span class="gap"></span>
         <div class="group">
         <button id="alphaBtn" data-tip="Damier de transparence (T)" hidden><i class="ico" id="alphaIcon" data-i="grid-2x2"></i></button>
+        <button id="listBtn" data-tip="Liste de lecture (P)"><i class="ico" data-i="list-video"></i></button>
         <button id="subsBtn" data-tip="Sous-titres (S)"><i class="ico" data-i="captions"></i></button>
         <button id="setBtn" data-tip="Paramètres"><i class="ico" data-i="settings"></i></button>
         <button id="fs" data-tip="Plein écran (F)"><i class="ico" id="fsIcon" data-i="maximize"></i></button>
@@ -113,6 +121,8 @@
     <div class="loader" id="loader"></div>
     <div class="drop"><div class="target"><i class="ico" data-i="plus"></i></div></div>
     <div class="toast" id="toast"></div>
+    <!-- Frame copied / saved: slides down from under the title bar -->
+    <div class="notice" id="notice" role="status"><span class="ok"><i class="ico" data-i="check"></i></span><span id="noticeText"></span></div>
   </div>
 
   <div class="menu" id="subsMenu"></div>
@@ -156,7 +166,9 @@
     <div class="modal form conv" role="dialog" aria-labelledby="convTitle">
       <header class="conv-top">
         <h2 id="convTitle">Convertir</h2>
-        <div class="seg" id="convSource">
+        <!-- Same switch as the Infos tabs: a white pill slides under the choice -->
+        <div class="tabs src-tabs" id="convSource">
+          <span class="pill"></span>
           <button data-src="file" class="on">Fichier ouvert</button><button data-src="seq">Séquence d'images</button>
         </div>
       </header>

@@ -11,6 +11,7 @@ mod editor;
 mod markers;
 mod ndi;
 mod stream;
+mod single;
 mod update;
 
 use app::run;
@@ -36,7 +37,6 @@ const OPTIONS: &[(&str, &str)] = &[
     ("force-window", "yes"),
     ("keep-open", "yes"),    // keep the last frame instead of closing
     ("image-display-duration", "inf"), // still images (png, static webp) stay on screen
-    ("autocreate-playlist", "filter"), // previous / next = the other media in the same folder
     ("directory-filter-types", "video,image"),
     ("input-default-bindings", "no"), // keys and mouse are handled by the web UI
     ("input-vo-keyboard", "no"),
@@ -624,6 +624,45 @@ mod win {
         ok.then(|| (r.left, r.top, r.right - r.left, r.bottom - r.top))
     }
 
+    #[repr(C)]
+    struct Point {
+        x: i32,
+        y: i32,
+    }
+
+    #[link(name = "user32")]
+    unsafe extern "system" {
+        fn GetCursorPos(p: *mut Point) -> i32;
+        fn BeginDeferWindowPos(n: i32) -> *mut c_void;
+        fn DeferWindowPos(info: *mut c_void, hwnd: Hwnd, after: Hwnd, x: i32, y: i32, w: i32, h: i32, flags: u32) -> *mut c_void;
+        fn EndDeferWindowPos(info: *mut c_void) -> i32;
+    }
+
+    /// The mouse in physical screen pixels, right on any monitor whatever its scale.
+    pub fn cursor() -> Option<(f64, f64)> {
+        let mut p = Point { x: 0, y: 0 };
+        // SAFETY: writes one POINT.
+        (unsafe { GetCursorPos(&mut p) } != 0).then_some((p.x as f64, p.y as f64))
+    }
+
+    /// Moves / resizes the UI window and the video window under it in one go: Windows applies both
+    /// together, so neither shows a moved-but-not-resized frame or lags behind the other.
+    pub fn move_pair(ui: isize, video: isize, (x, y, w, h): Rect) {
+        const FLAGS: u32 = 0x0004 | 0x0010; // SWP_NOZORDER | SWP_NOACTIVATE
+        // SAFETY: a deferred batch of two SetWindowPos on our own windows.
+        unsafe {
+            let mut d = BeginDeferWindowPos(2);
+            for hwnd in [ui, video] {
+                if !d.is_null() {
+                    d = DeferWindowPos(d, hwnd as Hwnd, null_mut(), x, y, w.max(1), h.max(1), FLAGS);
+                }
+            }
+            if !d.is_null() {
+                EndDeferWindowPos(d);
+            }
+        }
+    }
+
     /// Moves and resizes a window without activating it or changing its z-order.
     pub fn set_rect(hwnd: isize, (x, y, w, h): Rect) {
         // SAFETY: plain Win32 call on our own window. SWP_NOZORDER | SWP_NOACTIVATE.
@@ -657,6 +696,23 @@ mod win {
     pub fn never_paint_frame(hwnd: isize) {
         // SAFETY: subclassing our own window on its own (UI) thread.
         unsafe { SetWindowSubclass(hwnd as Hwnd, no_frame, 1, 0) };
+    }
+
+    #[link(name = "dwmapi")]
+    unsafe extern "system" {
+        fn DwmSetWindowAttribute(hwnd: Hwnd, attr: u32, value: *const c_void, size: u32) -> i32;
+    }
+
+    /// Windows 11 rounded corners (DWMWCP_ROUND) or square ones (DWMWCP_DONOTROUND); ignored on
+    /// Windows 10, which has square windows anyway.
+    pub fn round_corners(hwnd: isize, round: bool) {
+        let pref: u32 = if round { 2 } else { 1 };
+        let no_border: u32 = 0xFFFF_FFFE; // DWMWA_COLOR_NONE: the app draws its own thin edge
+        // SAFETY: DWMWA_WINDOW_CORNER_PREFERENCE (33) and DWMWA_BORDER_COLOR (34), u32 values, our own window.
+        unsafe {
+            DwmSetWindowAttribute(hwnd as Hwnd, 33, &pref as *const u32 as *const c_void, 4);
+            DwmSetWindowAttribute(hwnd as Hwnd, 34, &no_border as *const u32 as *const c_void, 4);
+        }
     }
 
     /// Removes the hidden caption / resize frame styles of a borderless window.
@@ -777,6 +833,29 @@ mod tests {
         assert!((secs - 2.0).abs() < 0.1, "{secs}");
     }
 
+    /// The playlist drop: `loadfile <file> insert-at-play <index>` puts the file before that entry.
+    #[test]
+    #[ignore]
+    fn playlist_insert_at() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release");
+        let (_lib, api) = load_mpv(&dir).expect("libmpv-2.dll in target/release");
+        let h = unsafe { (api.create)() };
+        let m = Mpv { h, ..api };
+        m.option("vo", "null");
+        m.option("ao", "null");
+        m.option("idle", "yes");
+        m.option("pause", "yes");
+        assert!(unsafe { (m.initialize)(h) } >= 0);
+        for f in ["a.mp4", "b.mp4", "c.mp4"] {
+            m.cmd(&["loadfile", f, "append"]);
+        }
+        assert!(m.cmd(&["loadfile", "x.mp4", "insert-at-play", "1"]));
+        let name = |i: usize| m.get(&format!("playlist/{i}/filename")).unwrap_or_default().rsplit(['/', '\\']).next().unwrap_or("").to_string();
+        let order: Vec<String> = (0..4).map(name).collect();
+        unsafe { (m.destroy)(h) };
+        assert_eq!(order, ["a.mp4", "x.mp4", "b.mp4", "c.mp4"]);
+    }
+
     /// A PNG sequence (with alpha) into ProRes 4444 through mpv's mf:// reader.
     #[test]
     #[ignore]
@@ -800,8 +879,7 @@ mod tests {
             .args(["-v", "error", "-count_frames", "-show_entries", "stream=codec_name,pix_fmt,nb_read_frames", "-of", "csv=p=0"])
             .arg(&out).output().unwrap();
         let info = String::from_utf8_lossy(&probe.stdout);
-        // shortcut: mpv's encoder drops the very last frame (24 of 25), as in the existing clip export; to fix upstream or with a frame-accurate end.
-        assert!(info.contains("prores,yuva444p") && (info.contains(",25") || info.contains(",24")), "{info}");
+        assert!(info.contains("prores,yuva444p") && info.contains(",25"), "every image, the last one too: {info}");
     }
 
     /// Every "Convertir" format through the bundled libmpv (needs ffmpeg / ffprobe on PATH).

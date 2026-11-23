@@ -36,6 +36,7 @@ const OBSERVED: &[&str] = &[
     "estimated-frame-number", "estimated-frame-count", "container-fps", "idle-active", "speed", "loop-file",
     "keep-open", "ab-loop-a", "ab-loop-b", "chapter-list", "track-list", "sid", "aid", "background",
     "hwdec-current", "current-tracks/video", "current-tracks/audio", "video-params", "osd-dimensions", "media-title",
+    "eof-reached", "playlist",
 ];
 
 pub enum UserEvent {
@@ -44,11 +45,13 @@ pub enum UserEvent {
     VideoSize(f64, f64),
     Toast(String),
     Ipc(String),
-    Drag(&'static str, Vec<PathBuf>),
+    Drag(&'static str, Vec<PathBuf>, (i32, i32)),
     /// A newer release exists (tag); `prompt` opens the dialog, otherwise only the button lights up.
     Update(String, bool),
     /// JavaScript to run in the page, from a worker thread.
     Eval(String),
+    /// Files opened while the app runs (a second launch, see single.rs).
+    Open(Vec<PathBuf>),
     /// Close the app (e.g. to let the installer replace it).
     Close,
     Quit,
@@ -129,11 +132,35 @@ fn serve(dir: &Path, req: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
 }
 
 /// Keeps the video window exactly under the UI window's content area (below the title bar).
-fn sync_video(ui: &Window, video: &Window, fullscreen: bool) {
+/// The video window covers the whole window, under the title bar too, so Windows can round all four
+/// of its corners like the title bar's (only in a plain window: maximized and fullscreen stay
+/// square). mpv keeps the picture below the bar with a top margin.
+fn sync_video(ui: &Window, video: &Window, m: Option<&Mpv>, mode: &Mode) {
     let Ok(pos) = ui.inner_position() else { return };
     let size = ui.inner_size();
-    let bar = if fullscreen { 0 } else { (TITLE_BAR * ui.scale_factor()).round() as u32 };
-    win::place_frameless(video.hwnd(), pos.x, pos.y + bar as i32, size.width as i32, size.height.saturating_sub(bar) as i32);
+    let fullscreen = matches!(mode, Mode::Fullscreen { .. });
+    let bar = if fullscreen { 0.0 } else { (TITLE_BAR * ui.scale_factor()).round() };
+    let rect = (pos.x, pos.y, size.width as i32, size.height as i32);
+    // Called on every move / resize step: only what changed is sent to Windows and mpv.
+    if win::window_rect(video.hwnd()) != Some(rect) {
+        win::place_frameless(video.hwnd(), rect.0, rect.1, rect.2, rect.3);
+    }
+    static LAST: Mutex<(Option<bool>, String)> = Mutex::new((None, String::new()));
+    let Ok(mut last) = LAST.lock() else { return };
+    let round = matches!(mode, Mode::Normal);
+    if last.0 != Some(round) {
+        // Both windows get the same Windows-drawn corners: the page draws none, so their shapes match exactly.
+        win::round_corners(video.hwnd(), round);
+        win::round_corners(ui.hwnd(), round);
+        last.0 = Some(round);
+    }
+    if let Some(m) = m {
+        let margin = format!("{:.4}", bar / f64::from(size.height.max(1)));
+        if last.1 != margin {
+            m.set("video-margin-ratio-top", &margin);
+            last.1 = margin;
+        }
+    }
 }
 
 /// New file: fit the window to the picture (90% of the screen at most), keeping its centre.
@@ -294,19 +321,27 @@ fn close(ui: &Window, video: &Window, m: &Mpv) {
 }
 
 /// Loads dropped or chosen files: the first replaces the playlist (its folder becomes the playlist).
-fn load_paths(m: &Mpv, paths: &[PathBuf]) {
+/// `append`: added at the end of the playlist (playing at once if nothing plays).
+fn load_paths(m: &Mpv, paths: &[PathBuf], append: bool) {
     for (i, p) in paths.iter().enumerate() {
-        m.cmd(&["loadfile", &p.to_string_lossy(), if i == 0 { "replace" } else { "append" }]);
+        m.cmd(&["loadfile", &p.to_string_lossy(), if i == 0 && !append { "replace" } else { "append-play" }]);
     }
 }
 
 pub fn run() -> Result<(), String> {
+    // Every argument is a file (or URL) to play: also covers "Open with" and drag & drop onto the .exe.
+    // Already running? They go to that app's playlist and this launch ends here.
+    let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
+    let pipe = crate::single::forward(&args);
     let dir = exe_dir();
     let ui_dir = dir.join("ui");
     let (_lib, api) = load_mpv(&dir)?;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
     let _ = PROXY.set(Mutex::new(event_loop.create_proxy()));
+    if let Some(pipe) = pipe {
+        crate::single::serve(pipe, |paths| send(UserEvent::Open(paths)));
+    }
     let icon = Icon::from_resource(1, None).ok();
 
     // Video window: taskbar entry and owner of the UI window.
@@ -344,7 +379,7 @@ pub fn run() -> Result<(), String> {
     win::strip_frame(ui.hwnd());
     win::never_paint_frame(ui.hwnd());
     ui.set_visible(true);
-    sync_video(&ui, &video, false);
+    sync_video(&ui, &video, None, &Mode::Normal);
     let mut mode = Mode::Normal;
 
     // mpv, drawing into the video window.
@@ -374,6 +409,7 @@ pub fn run() -> Result<(), String> {
         unsafe { (m.destroy)(h) };
         return Err("Impossible d'initialiser mpv.".into());
     }
+    sync_video(&ui, &video, Some(&m), &Mode::Normal); // picture below the title bar from the start
     // Before each file opens: turn WAV markers (cue points, After Effects XMP) into chapters.
     unsafe { (m.hook_add)(h, 0, c"on_load".as_ptr(), 0) };
     // NDI sources play as ndi://<name>: the app feeds mpv the frames it receives (src/ndi.rs).
@@ -396,9 +432,10 @@ pub fn run() -> Result<(), String> {
         })
         .with_drag_drop_handler(move |ev| {
             let _ = proxy_drop.send_event(match ev {
-                DragDropEvent::Enter { paths, .. } => UserEvent::Drag("enter", paths),
-                DragDropEvent::Drop { paths, .. } => UserEvent::Drag("drop", paths),
-                DragDropEvent::Leave => UserEvent::Drag("leave", Vec::new()),
+                DragDropEvent::Enter { paths, position } => UserEvent::Drag("enter", paths, position),
+                DragDropEvent::Over { position } => UserEvent::Drag("over", Vec::new(), position),
+                DragDropEvent::Drop { paths, position } => UserEvent::Drag("drop", paths, position),
+                DragDropEvent::Leave => UserEvent::Drag("leave", Vec::new(), (0, 0)),
                 _ => return true,
             });
             true // handled here: the page never navigates to the file
@@ -407,12 +444,12 @@ pub fn run() -> Result<(), String> {
         .map_err(|e| format!("Interface impossible à charger (WebView2) : {e}"))?;
 
     crate::check_for_update(false);
-    // Every argument is a file (or URL) to play: also covers "Open with" and drag & drop onto the .exe.
-    let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
-    load_paths(&m, &args);
+    load_paths(&m, &args, false);
 
     let mut pending = Map::new();
     let mut flush_at: Option<Instant> = None;
+    // Controls hidden (page says so): the playback clock stops reaching the page until they show.
+    let mut ui_quiet = false;
     let mut events = Some(events);
     let mut workers: Vec<thread::JoinHandle<()>> = Vec::new();
     let mut grab: Option<Grab> = None;
@@ -435,9 +472,11 @@ pub fn run() -> Result<(), String> {
             }
             Event::UserEvent(ev) => match ev {
                 UserEvent::Prop(k, v) => {
+                    let clock = matches!(k.as_str(), "time-pos" | "estimated-frame-number");
                     pending.insert(k, v.map_or(Value::Null, Value::String));
-                    // ~30 updates per second at most: time-pos changes every frame.
-                    if flush_at.is_none() {
+                    // ~30 updates per second at most: time-pos changes every frame. With the controls
+                    // hidden nothing shows it, so it just waits in `pending` (the latest value wins).
+                    if flush_at.is_none() && !(ui_quiet && clock) {
                         flush_at = Some(Instant::now() + Duration::from_millis(33));
                         *flow = ControlFlow::WaitUntil(flush_at.unwrap());
                     }
@@ -446,6 +485,21 @@ pub fn run() -> Result<(), String> {
                 UserEvent::VideoSize(w, h) => fit_to_video(&ui, &mode, w, h),
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
                 UserEvent::Eval(js) => eval(&webview, &js),
+                // Opened from Explorer while running: into the playlist (or played, when nothing
+                // plays), and the window comes to the front.
+                UserEvent::Open(paths) => {
+                    video.set_minimized(false);
+                    ui.set_focus();
+                    if !paths.is_empty() {
+                        let idle = m.get("idle-active").as_deref() == Some("yes");
+                        load_paths(&m, &paths, !idle);
+                        if !idle {
+                            let name = paths[0].file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                            let more = if paths.len() > 1 { format!(" (+{})", paths.len() - 1) } else { String::new() };
+                            eval(&webview, &format!("window.vb && vb.toast({})", json!(format!("Ajouté à la liste de lecture : {name}{more}"))));
+                        }
+                    }
+                }
                 UserEvent::Close => close(&ui, &video, &m),
                 UserEvent::Update(tag, prompt) => {
                     if ui_ready {
@@ -453,10 +507,13 @@ pub fn run() -> Result<(), String> {
                     }
                     update_offer = Some((tag, prompt));
                 }
-                UserEvent::Drag(kind, paths) => {
-                    eval(&webview, &format!("window.vb && vb.drag({})", json!(kind == "enter")));
+                // Positions are physical pixels from the page's top-left corner; the page decides where
+                // a drop goes (into the playlist when it is open, otherwise in place of what plays).
+                UserEvent::Drag(kind, paths, (x, y)) => {
+                    let over = kind == "enter" || kind == "over";
+                    eval(&webview, &format!("window.vb && vb.drag({over}, {x}, {y})"));
                     if kind == "drop" && !paths.is_empty() {
-                        load_paths(&m, &paths);
+                        eval(&webview, &format!("window.vb && vb.dropped({}, {x}, {y})", json!(paths)));
                     }
                 }
                 UserEvent::Ipc(body) => {
@@ -513,7 +570,7 @@ pub fn run() -> Result<(), String> {
                             // Dragging the title bar of a maximized / fullscreen window: like Windows, it goes back
                             // to its previous size under the cursor (same relative spot on the bar), then moves.
                             "grab" if mode != Mode::Normal && s("dir").is_empty() => {
-                                let (Some(x), Some(y)) = (msg["x"].as_f64(), msg["y"].as_f64()) else { return };
+                                let Some((x, y)) = win::cursor() else { return };
                                 let prev = match mode {
                                     Mode::Maximized { prev } => prev,
                                     Mode::Fullscreen { prev, was_max } => was_max.unwrap_or(prev),
@@ -530,7 +587,7 @@ pub fn run() -> Result<(), String> {
                                 eval(&webview, "window.vb && vb.maximized(false)");
                                 mode = Mode::Normal;
                                 win::set_rect(ui.hwnd(), (nx, ny, prev.2, prev.3));
-                                sync_video(&ui, &video, false);
+                                sync_video(&ui, &video, Some(&m), &mode);
                                 grab = Some(Grab {
                                     dir: String::new(),
                                     cursor: (x, y),
@@ -539,24 +596,21 @@ pub fn run() -> Result<(), String> {
                                 });
                             }
                             "grab" if mode != Mode::Normal => {} // no edge resizing while maximized / fullscreen
+                            // The cursor comes from Windows (physical pixels, right on every monitor), not from
+                            // the page, whose screen coordinates go wrong across monitors of different scales.
                             "grab" => {
-                                if let (Ok(pos), Some(x), Some(y)) = (ui.outer_position(), msg["x"].as_f64(), msg["y"].as_f64()) {
-                                    grab = Some(Grab { dir: s("dir"), cursor: (x, y), pos, size: ui.outer_size() });
+                                if let (Ok(pos), Some(cursor)) = (ui.outer_position(), win::cursor()) {
+                                    grab = Some(Grab { dir: s("dir"), cursor, pos, size: ui.outer_size() });
                                 }
                             }
                             "grab-move" => {
-                                if let (Some(x), Some(y)) = (msg["x"].as_f64(), msg["y"].as_f64()) {
-                                    last_cursor = (x, y);
-                                }
-                                if let (Some(g), Some(x), Some(y)) = (&grab, msg["x"].as_f64(), msg["y"].as_f64()) {
+                                let Some((x, y)) = win::cursor() else { return };
+                                last_cursor = (x, y);
+                                if let Some(g) = &grab {
                                     let min = (480.0 * ui.scale_factor(), (300.0 + TITLE_BAR) * ui.scale_factor());
                                     let (px, py, w, h) = g.apply(x, y, min);
-                                    if g.dir.is_empty() {
-                                        ui.set_outer_position(PhysicalPosition::new(px, py));
-                                    } else {
-                                        ui.set_outer_position(PhysicalPosition::new(px, py));
-                                        ui.set_inner_size(PhysicalSize::new(w, h));
-                                    }
+                                    let r = |v: f64| v.round() as i32;
+                                    win::move_pair(ui.hwnd(), video.hwnd(), (r(px), r(py), r(w), r(h)));
                                 }
                             }
                             // Released at the top edge of the screen: maximize, like Windows' snap.
@@ -570,7 +624,7 @@ pub fn run() -> Result<(), String> {
                                     win::set_rect(ui.hwnd(), work);
                                     mode = Mode::Maximized { prev };
                                     eval(&webview, "window.vb && vb.maximized(true)");
-                                    sync_video(&ui, &video, false);
+                                    sync_video(&ui, &video, Some(&m), &mode);
                                 }
                             }
                             "min" => video.set_minimized(true),
@@ -591,7 +645,7 @@ pub fn run() -> Result<(), String> {
                                     fs => fs,
                                 };
                                 eval(&webview, &format!("window.vb && vb.maximized({})", matches!(mode, Mode::Maximized { .. })));
-                                sync_video(&ui, &video, false);
+                                sync_video(&ui, &video, Some(&m), &mode);
                             }
                             "fs" => {
                                 mode = match mode {
@@ -614,7 +668,7 @@ pub fn run() -> Result<(), String> {
                                 };
                                 let fullscreen = matches!(mode, Mode::Fullscreen { .. });
                                 eval(&webview, &format!("window.vb && vb.fullscreen({fullscreen})"));
-                                sync_video(&ui, &video, fullscreen);
+                                sync_video(&ui, &video, Some(&m), &mode);
                             }
                             "close" => close(&ui, &video, &m),
                             _ => {}
@@ -638,6 +692,13 @@ pub fn run() -> Result<(), String> {
                         "save-frame" => workers.push(save_frame(m)),
                         "copy-frame" => workers.push(copy_frame(m)),
                         "export" => workers.push(crate::editor::export(m)),
+                        "quiet" => {
+                            ui_quiet = msg["on"].as_bool() == Some(true);
+                            if !ui_quiet && !pending.is_empty() {
+                                flush_at = Some(Instant::now());
+                                *flow = ControlFlow::WaitUntil(flush_at.unwrap());
+                            }
+                        }
                         "convert" => {
                             let seq = msg["seq"].as_str().zip(msg["fps"].as_str()).map(|(u, f)| (u.to_string(), f.to_string()));
                             workers.push(crate::editor::convert(m, s("preset"), msg["alpha"].as_bool() == Some(true), seq));
@@ -658,29 +719,41 @@ pub fn run() -> Result<(), String> {
                         "lang" => crate::set_lang(&s("v")),
                         "open" => {
                             if let Some(file) = rfd::FileDialog::new().set_title(crate::tr("Ouvrir un fichier", "Open a file")).pick_file() {
-                                load_paths(&m, &[file]);
+                                load_paths(&m, &[file], false);
                             }
                         }
                         "open-files" => {
                             if let Some(files) = rfd::FileDialog::new().set_title(crate::tr("Ouvrir plusieurs fichiers", "Open files")).pick_files() {
-                                load_paths(&m, &files);
+                                load_paths(&m, &files, msg["append"].as_bool() == Some(true));
                             }
                         }
                         // mpv plays a folder as a playlist of the media it contains.
                         "open-folder" => {
                             if let Some(dir) = rfd::FileDialog::new().set_title(crate::tr("Ouvrir un dossier", "Open a folder")).pick_folder() {
-                                load_paths(&m, &[dir]);
+                                load_paths(&m, &[dir], false);
                             }
                         }
                         "open-path" => {
                             let path = s("path");
                             if Path::new(&path).exists() {
-                                load_paths(&m, &[PathBuf::from(path)]);
+                                load_paths(&m, &[PathBuf::from(path)], false);
                             } else {
                                 toast("Ce fichier n'existe plus");
                             }
                         }
                         "open-url" => crate::stream::open(m, &s("url")),
+                        "load-paths" => {
+                            let paths: Vec<PathBuf> = msg["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect();
+                            match msg["at"].as_u64() {
+                                // Into the playlist before entry `at` (playing at once if nothing plays).
+                                Some(at) => {
+                                    for (i, p) in paths.iter().enumerate() {
+                                        m.cmd(&["loadfile", &p.to_string_lossy(), "insert-at-play", &(at + i as u64).to_string()]);
+                                    }
+                                }
+                                None => load_paths(&m, &paths, msg["append"].as_bool() == Some(true)),
+                            }
+                        }
                         "list-cameras" => {
                             thread::spawn(|| eval_js(&format!("window.vb && vb.cameras({})", json!(crate::list_cameras()))));
                         }
@@ -743,7 +816,7 @@ pub fn run() -> Result<(), String> {
             },
             Event::WindowEvent { window_id, event, .. } => match event {
                 WindowEvent::Moved(_) | WindowEvent::Resized(_) if window_id == ui.id() => {
-                    sync_video(&ui, &video, matches!(mode, Mode::Fullscreen { .. }));
+                    sync_video(&ui, &video, Some(&m), &mode);
                 }
                 // Clicking the taskbar entry activates the video window: hand focus to the UI.
                 WindowEvent::Focused(true) if window_id == video.id() => ui.set_focus(),
