@@ -61,7 +61,8 @@
   <div class="stage idle" id="stage">
     <!-- Playlist: drop videos on it (or add them) to play them one after another; drag rows to reorder -->
     <aside class="playlist" id="playlist" aria-label="Liste de lecture">
-      <header><h2>Liste de lecture</h2><span class="count" id="plCount"></span></header>
+      <header><h2>Liste de lecture</h2><span class="count" id="plCount"></span>
+        <button class="clear" id="plClear" aria-label="Vider la liste" data-tip="Vider la liste"><i class="ico" data-i="trash-2"></i></button></header>
       <ol id="plItems"></ol>
       <p class="pl-empty" id="plEmpty">Glissez des vidéos ici pour les lire à la suite.</p>
       <footer><button id="plAdd"><i class="ico" data-i="list-plus"></i>Ajouter des fichiers…</button></footer>

@@ -913,6 +913,7 @@ function renderPlaylist() {
   plKey = key;
   $("plCount").textContent = list.length ? String(list.length) : "";
   $("plEmpty").hidden = list.length > 0;
+  $("plClear").hidden = list.length < 1;
   $("plItems").replaceChildren(...list.map((e, i) => {
     const li = el("li", e.current ? "current" : "");
     li.dataset.i = i;
@@ -925,6 +926,8 @@ function renderPlaylist() {
   }));
 }
 $("listBtn").onclick = () => togglePlaylist();
+// Empties the list and stops: back to the home screen, like the logo.
+$("plClear").onclick = ev => { ev.stopPropagation(); cmd("stop"); };
 $("plAdd").onclick = () => send({ t: "open-files", append: true });
 // Files dragged over the window (Rust gives the cursor in physical pixels). With the list open,
 // a line follows the cursor between rows and the files land there (at the end outside the list);

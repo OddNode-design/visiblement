@@ -330,7 +330,7 @@ fn load_paths(m: &Mpv, paths: &[PathBuf], append: bool) {
 
 pub fn run() -> Result<(), String> {
     // Every argument is a file (or URL) to play: also covers "Open with" and drag & drop onto the .exe.
-    // Already running? They go to that app's playlist and this launch ends here.
+    // Already running? That app opens them and this launch ends here.
     let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     let pipe = crate::single::forward(&args);
     let dir = exe_dir();
@@ -485,19 +485,13 @@ pub fn run() -> Result<(), String> {
                 UserEvent::VideoSize(w, h) => fit_to_video(&ui, &mode, w, h),
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
                 UserEvent::Eval(js) => eval(&webview, &js),
-                // Opened from Explorer while running: into the playlist (or played, when nothing
-                // plays), and the window comes to the front.
+                // Opened from Explorer while running: replaces what plays (the playlist is built
+                // only by dropping files on it), and the window comes to the front.
                 UserEvent::Open(paths) => {
                     video.set_minimized(false);
                     ui.set_focus();
                     if !paths.is_empty() {
-                        let idle = m.get("idle-active").as_deref() == Some("yes");
-                        load_paths(&m, &paths, !idle);
-                        if !idle {
-                            let name = paths[0].file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                            let more = if paths.len() > 1 { format!(" (+{})", paths.len() - 1) } else { String::new() };
-                            eval(&webview, &format!("window.vb && vb.toast({})", json!(format!("Ajouté à la liste de lecture : {name}{more}"))));
-                        }
+                        load_paths(&m, &paths, false);
                     }
                 }
                 UserEvent::Close => close(&ui, &video, &m),
