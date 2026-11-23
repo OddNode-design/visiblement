@@ -39,6 +39,7 @@ window.vb = {
     $("updateGo").textContent = canInstall ? "Installer" : "Télécharger";
     $("updateText").innerHTML = `Visiblement <b>${v}</b> est prête. Tu as la version ${current}.`;
     $("updBtn").classList.add("available");
+    $("verText").hidden = true;
     $("updBtn").setAttribute("aria-label", `Mettre à jour vers la version ${v}`);
     if (prompt) { $("updateNever").checked = false; $("updateBack").classList.add("open"); }
   },
@@ -55,7 +56,8 @@ window.vb = {
     $("updateBack").classList.add("open");
     toast("Échec de la mise à jour : télécharge-la depuis la page des versions");
   },
-  version() {},
+  // No update: just the installed version, small, where the update button would be.
+  version(v) { $("verText").textContent = `Version ${v}`; },
   maximized(on) { win.classList.toggle("maximized", on); swapIcon($("wMax").querySelector(".ico"), on ? "copy" : "square"); },
   fullscreen(on) { win.classList.toggle("fullscreen", on); win.classList.remove("peek"); swapIcon($("fsIcon"), on ? "minimize" : "maximize"); },
 };
@@ -473,6 +475,13 @@ function toast(msg) {
   $("toast").textContent = msg; $("toast").classList.add("show");
   clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 1800);
 }
+// Export / conversion running (Rust): a pill with its progress and a stop button.
+vb.job = (label, pct) => {
+  $("jobText").textContent = label; $("jobPct").textContent = `${pct} %`;
+  $("job").classList.add("show"); $("toast").classList.remove("show");
+};
+vb.jobDone = () => $("job").classList.remove("show");
+$("jobStop").onclick = () => { $("jobText").textContent = "Arrêt…"; send({ t: "cancel-encode" }); };
 // Confirmation of a copied or saved frame, at the top: the menu that asked for it is gone by then.
 let noticeTimer;
 function notice(msg) {

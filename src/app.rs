@@ -692,6 +692,7 @@ pub fn run() -> Result<(), String> {
                         "save-frame" => workers.push(save_frame(m)),
                         "copy-frame" => workers.push(copy_frame(m)),
                         "export" => workers.push(crate::editor::export(m)),
+                        "cancel-encode" => crate::editor::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed),
                         "quiet" => {
                             ui_quiet = msg["on"].as_bool() == Some(true);
                             if !ui_quiet && !pending.is_empty() {

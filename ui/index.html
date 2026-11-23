@@ -76,6 +76,7 @@
       </div>
       <div class="hint">Glisse une vidéo ici ou clic droit pour le menu</div>
       <!-- Only when an update exists: the arrow dives into the line on hover and drops back in from the top -->
+      <span class="ver" id="verText"></span>
       <button class="upd" id="updBtn" aria-label="Mettre à jour">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <clipPath id="updClip"><rect width="24" height="19.5"/></clipPath>
@@ -121,6 +122,9 @@
     <div class="loader" id="loader"></div>
     <div class="drop"><div class="target"><i class="ico" data-i="plus"></i></div></div>
     <div class="toast" id="toast"></div>
+    <!-- Export / conversion in progress, with its stop button -->
+    <div class="job" id="job" role="status"><span id="jobText"></span><span class="pct" id="jobPct"></span>
+      <button id="jobStop" aria-label="Arrêter"><i class="ico" data-i="x"></i></button></div>
     <!-- Frame copied / saved: slides down from under the title bar -->
     <div class="notice" id="notice" role="status"><span class="ok"><i class="ico" data-i="check"></i></span><span id="noticeText"></span></div>
   </div>

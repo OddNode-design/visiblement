@@ -879,6 +879,32 @@ mod tests {
         assert_eq!(order, ["a.mp4", "x.mp4", "b.mp4", "c.mp4"]);
     }
 
+    /// The stop button: a long encode stopped after half a second ends at once and leaves no file.
+    #[test]
+    #[ignore]
+    fn cancel_stops_and_removes_the_file() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release");
+        let (_lib, m) = load_mpv(&dir).expect("libmpv-2.dll in target/release");
+        let tmp = std::env::temp_dir().join("visiblement-cancel-test");
+        let _ = std::fs::create_dir_all(&tmp);
+        let src = tmp.join("long.mp4");
+        assert!(std::process::Command::new("ffmpeg")
+            .args(["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=25:duration=60", "-pix_fmt", "yuv420p", "-preset", "ultrafast"])
+            .arg(&src).status().unwrap().success());
+        let out = tmp.join("long.mov");
+        let (_, settings) = editor::preset("prores:4444", false, None).unwrap();
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            editor::CANCEL.store(true, std::sync::atomic::Ordering::Relaxed);
+        });
+        let t0 = std::time::Instant::now();
+        let ok = editor::encode_any(&m, &src.to_string_lossy(), &out, &settings, |_| {});
+        editor::CANCEL.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert!(!ok, "a stopped encode is not a success");
+        assert!(t0.elapsed().as_secs_f64() < 3.0, "stopped quickly: {:?}", t0.elapsed());
+        assert!(!out.exists(), "no half file left");
+    }
+
     /// A PNG sequence (with alpha) into ProRes 4444 through mpv's mf:// reader.
     #[test]
     #[ignore]

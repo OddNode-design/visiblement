@@ -3,6 +3,7 @@
 
 use crate::{EVENT_END_FILE, EVENT_SHUTDOWN, Mpv};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
 /// Uncompressed audio at the source's sample depth.
@@ -159,7 +160,7 @@ pub fn encode_any(m: &Mpv, src: &str, out: &Path, settings: &[(&str, String)], p
     encoders.iter().any(|enc| {
         let _ = std::fs::remove_file(out);
         let s: Vec<_> = settings.iter().map(|(k, v)| (*k, if *k == "ovc" { enc.to_string() } else { v.clone() })).collect();
-        encode(m, src, out, None, None, &s, &progress) && (!video || has_video(out))
+        !CANCEL.load(Ordering::Relaxed) && encode(m, src, out, None, None, &s, &progress) && (!video || has_video(out))
     })
 }
 
@@ -222,15 +223,34 @@ pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, se
     enc.cmd(&["loadfile", src]);
     loop {
         // SAFETY: valid handle; the event lives until the next call.
-        let ev = unsafe { &*(m.wait_event)(h, 0.5) };
+        let ev = unsafe { &*(m.wait_event)(h, 0.25) };
         match ev.id {
             EVENT_SHUTDOWN | EVENT_END_FILE => break,
+            _ if CANCEL.load(Ordering::Relaxed) => break,
             _ => progress(enc.num("percent-pos")),
         }
     }
     // Destroying flushes and closes the output file.
     unsafe { (m.destroy)(h) };
+    if CANCEL.load(Ordering::Relaxed) {
+        let _ = std::fs::remove_file(out); // a stopped encode leaves no half file behind
+        return false;
+    }
     out.metadata().is_ok_and(|md| md.len() > 0)
+}
+
+/// Set by the page's stop button: the running export / conversion ends and its file is removed.
+pub static CANCEL: AtomicBool = AtomicBool::new(false);
+
+/// The progress pill of the page (label, percentage), then its end.
+fn job(label: &str, pct: f64) {
+    crate::app::eval_js(&format!("window.vb && vb.job({}, {})", serde_json::json!(label), pct.round()));
+}
+
+/// The result of an export / conversion: the pill goes, a toast says how it ended.
+fn job_done(m: &Mpv, ok: bool, done: String, failed: &str, cancelled: &str) {
+    crate::app::eval_js("window.vb && vb.jobDone()");
+    m.toast(if CANCEL.swap(false, Ordering::Relaxed) { cancelled } else if ok { &done } else { failed });
 }
 
 /// Asks where to save, then encodes in the background with a progress toast in the player.
@@ -268,13 +288,13 @@ pub fn export(m: Mpv) -> thread::JoinHandle<()> {
             _ => "fichier entier".into(),
         };
         let settings = codecs(&out_ext, video_codec.as_deref(), audio_format.as_deref(), alpha);
-        crate::app::EXPORTING.store(true, std::sync::atomic::Ordering::Relaxed);
-        let ok = encode(&m, &src, &out, a, b, &settings, |pct| {
-            m.toast(&format!("Export ({span})… {pct:.0} %"));
-        });
-        crate::app::EXPORTING.store(false, std::sync::atomic::Ordering::Relaxed);
+        crate::app::EXPORTING.store(true, Ordering::Relaxed);
+        CANCEL.store(false, Ordering::Relaxed);
+        let label = format!("Export ({span})");
+        let ok = encode(&m, &src, &out, a, b, &settings, |pct| job(&label, pct));
+        crate::app::EXPORTING.store(false, Ordering::Relaxed);
         let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        m.toast(&if ok { format!("Extrait enregistré : {name}") } else { "Échec de l'export".into() });
+        job_done(&m, ok, format!("Extrait enregistré : {name}"), "Échec de l'export", "Export annulé");
     })
 }
 
@@ -334,11 +354,12 @@ pub fn convert(m: Mpv, id: String, alpha: bool, seq: Option<(String, String)>) -
             m.toast("Choisis un autre nom que le fichier d'origine");
             return;
         }
-        crate::app::EXPORTING.store(true, std::sync::atomic::Ordering::Relaxed);
-        let ok = encode_any(&m, &src, &out, &settings, |pct| m.toast(&format!("Conversion… {pct:.0} %")));
-        crate::app::EXPORTING.store(false, std::sync::atomic::Ordering::Relaxed);
+        crate::app::EXPORTING.store(true, Ordering::Relaxed);
+        CANCEL.store(false, Ordering::Relaxed);
+        let ok = encode_any(&m, &src, &out, &settings, |pct| job("Conversion", pct));
+        crate::app::EXPORTING.store(false, Ordering::Relaxed);
         let name = out.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        m.toast(&if ok { format!("Fichier converti : {name}") } else { "Échec de la conversion".into() });
+        job_done(&m, ok, format!("Fichier converti : {name}"), "Échec de la conversion", "Conversion annulée");
     })
 }
 
