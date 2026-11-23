@@ -5,3 +5,6 @@
 /.impeccable
 *.msi
 *.wixpdb
+
+# Local session notes
+HANDOFF.md
