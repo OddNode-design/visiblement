@@ -580,10 +580,11 @@ addEventListener("keydown", ev => {
   else if (k === "ArrowLeft") cmd("seek", -5, "relative+exact");
   else if (k === "ArrowUp") { ev.preventDefault(); setVolume((volTarget ?? num("volume") / 100) + 0.05); }
   else if (k === "ArrowDown") { ev.preventDefault(); setVolume((volTarget ?? num("volume") / 100) - 0.05); }
-  else if (k === ".") cmd("frame-step");
+  else if (k === "." || k === ";") cmd("frame-step"); // ";" sits right of "," on AZERTY
   else if (k === ",") cmd("frame-back-step");
-  else if (k === "PageDown") cmd("playlist-next");
-  else if (k === "PageUp") cmd("playlist-prev");
+  // A playlist: its next / previous entry; otherwise the next / previous media of the folder.
+  else if (k === "PageDown") num("playlist-count") > 1 ? cmd("playlist-next") : send({ t: "folder-step", step: 1 });
+  else if (k === "PageUp") num("playlist-count") > 1 ? cmd("playlist-prev") : send({ t: "folder-step", step: -1 });
   else if (c && k.toLowerCase() === "s") { ev.preventDefault(); actions.save(); }
   else if (c && k.toLowerCase() === "c") actions.copy();
   else if (c && k.toLowerCase() === "e") { ev.preventDefault(); actions.export(); }

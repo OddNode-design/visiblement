@@ -737,6 +737,14 @@ pub fn run() -> Result<(), String> {
                             }
                         }
                         "open-url" => crate::stream::open(m, &s("url")),
+                        // Page Up / Page Down: the previous / next media of the playing file's folder.
+                        "folder-step" => {
+                            let step = msg["step"].as_i64().unwrap_or(1) as i32;
+                            match m.get("path").and_then(|p| crate::folder_neighbour(Path::new(&p), step)) {
+                                Some(p) => load_paths(&m, &[p], false),
+                                None => toast(if step > 0 { "Dernière vidéo du dossier" } else { "Première vidéo du dossier" }),
+                            }
+                        }
                         "load-paths" => {
                             let paths: Vec<PathBuf> = msg["paths"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect();
                             match msg["at"].as_u64() {

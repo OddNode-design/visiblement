@@ -28,7 +28,7 @@ const EN = {
   "Glisse une vidéo ici ou clic droit pour le menu": "Drop a video here, or right-click for the menu",
   "Rechercher une mise à jour": "Check for updates",
   "Précédente (Page préc.)": "Previous (Page Up)", "Image précédente (,)": "Previous frame (,)", "Lecture (Espace)": "Play (Space)",
-  "Pause (Espace)": "Pause (Space)", "Image suivante (.)": "Next frame (.)", "Suivante (Page suiv.)": "Next (Page Down)",
+  "Pause (Espace)": "Pause (Space)", "Image suivante (;)": "Next frame (.)", "Suivante (Page suiv.)": "Next (Page Down)",
   "Muet (M)": "Mute (M)", "Damier de transparence (T)": "Transparency checkerboard (T)", "Sous-titres (S)": "Subtitles (S)",
   "Paramètres": "Settings", "Plein écran (F)": "Fullscreen (F)",
   // Settings
@@ -52,6 +52,7 @@ const EN = {
   "Mettre à jour": "Update",
   "Liste de lecture": "Playlist", "Liste de lecture (P)": "Playlist (P)", "Ajouter des fichiers…": "Add files…",
   "Glissez des vidéos ici pour les lire à la suite.": "Drop videos here to play them one after another.",
+  "Dernière vidéo du dossier": "Last video of the folder", "Première vidéo du dossier": "First video of the folder",
   "Retirer": "Remove", "Vider la liste": "Clear the list", "Rejouer (Espace)": "Replay (Space)",
   "Conversion": "Converting", "Arrêter": "Stop", "Arrêt…": "Stopping…",
   "Conversion annulée": "Conversion cancelled", "Export annulé": "Export cancelled",

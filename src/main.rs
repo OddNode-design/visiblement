@@ -800,6 +800,41 @@ fn main() {
     }
 }
 
+/// Media Visiblement opens from Explorer (installer/visiblement.wxs), for Page Up / Page Down.
+const MEDIA_EXT: [&str; 14] = ["mp4", "mov", "mkv", "webm", "avi", "m4v", "mxf", "gif", "webp", "apng", "wav", "mp3", "flac", "m4a"];
+
+/// The media before (`step` -1) or after (+1) `current` in its folder, by name. Files a sync client
+/// (Dropbox, OneDrive) keeps online only are skipped: opening them would start a download.
+fn folder_neighbour(current: &Path, step: i32) -> Option<PathBuf> {
+    let local = |e: &std::fs::DirEntry| {
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::MetadataExt;
+            // OFFLINE, RECALL_ON_OPEN, RECALL_ON_DATA_ACCESS: a cloud placeholder, not on disk.
+            e.metadata().is_ok_and(|m| m.is_file() && m.file_attributes() & (0x1000 | 0x40000 | 0x400000) == 0)
+        }
+        #[cfg(not(windows))]
+        e.metadata().is_ok_and(|m| m.is_file())
+    };
+    let key = |p: &Path| p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(current.parent()?)
+        .ok()?
+        .flatten()
+        .filter(|e| {
+            let ext = e.path().extension().map(|x| x.to_string_lossy().to_lowercase()).unwrap_or_default();
+            MEDIA_EXT.contains(&ext.as_str()) && local(e)
+        })
+        .map(|e| e.path())
+        .collect();
+    files.sort_by_key(|p| key(p));
+    let here = key(current);
+    if step > 0 {
+        files.into_iter().find(|p| key(p) > here)
+    } else {
+        files.into_iter().rev().find(|p| key(p) < here)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -933,6 +968,20 @@ mod tests {
         assert!(info.contains("bt709,bt709,bt709"), "Rec.709 written in the file: {info}");
         assert!(info.contains("24000/1001"), "exact 23.976: {info}");
         assert!(info.trim_end().ends_with(",25"), "every image, the last one too: {info}");
+    }
+
+    #[test]
+    fn folder_neighbour_steps_by_name() {
+        let dir = std::env::temp_dir().join(format!("vb-folder-step-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        for f in ["A.mov", "b.mp4", "c.txt", "d.wav"] {
+            std::fs::write(dir.join(f), b"").unwrap();
+        }
+        let name = |p: Option<PathBuf>| p.map(|p| p.file_name().unwrap().to_string_lossy().into_owned());
+        assert_eq!(name(folder_neighbour(&dir.join("b.mp4"), 1)).as_deref(), Some("d.wav"));
+        assert_eq!(name(folder_neighbour(&dir.join("b.mp4"), -1)).as_deref(), Some("A.mov"));
+        assert_eq!(folder_neighbour(&dir.join("d.wav"), 1), None);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
