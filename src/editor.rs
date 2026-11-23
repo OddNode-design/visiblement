@@ -203,7 +203,16 @@ pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, se
     if matches!(ext.as_str(), "mov" | "mp4" | "m4v") && settings.iter().any(|(k, _)| *k == "ovc") {
         enc.option("ofopts", "use_editlist=0");
     }
-    for (k, v) in settings {
+    // Every encoder on all cores: through the library, FFmpeg leaves them on one thread unless asked
+    // (ProRes from a PNG sequence went from 36 s to 3 s).
+    let mut settings = settings.to_vec();
+    let video = settings.iter().any(|(k, _)| *k == "ovc");
+    match settings.iter_mut().find(|(k, _)| *k == "ovcopts") {
+        Some((_, v)) => v.push_str(",threads=0"),
+        None if video => settings.push(("ovcopts", "threads=0".into())),
+        None => {}
+    }
+    for (k, v) in &settings {
         enc.option(k, v);
     }
     if unsafe { (m.initialize)(h) } < 0 {
@@ -269,6 +278,28 @@ pub fn export(m: Mpv) -> thread::JoinHandle<()> {
     })
 }
 
+/// An image sequence on top of a format's settings: its frame rate, and RGB images into YUV with
+/// the HD matrix (Rec.709), said so in the file as editing software reads it (FFmpeg's default
+/// is the SD one: colours shifted slightly).
+pub fn sequence_settings(id: &str, fps: &str, settings: &mut Vec<(&'static str, String)>) {
+    // NTSC rates as exact as a float gets (24000/1001, 30000/1001): no drift over long sequences.
+    let fps = match fps {
+        "23.976" => "23.976023976023978",
+        "29.97" => "29.97002997002997",
+        other => other,
+    };
+    settings.push(("mf-fps", fps.to_string()));
+    if ["prores", "dnxhr", "h264", "h265", "av1"].iter().any(|c| id.starts_with(c)) {
+        for (k, v) in settings.iter_mut() {
+            match *k {
+                "vf" => *v = v.replacen("lavfi=[", "lavfi=[scale=out_color_matrix=bt709:out_range=tv,", 1),
+                "ovcopts" => v.push_str(",colorspace=bt709,color_primaries=bt709,color_trc=bt709"),
+                _ => {}
+            }
+        }
+    }
+}
+
 /// "Convertir": the whole open file, or an image sequence (`seq`: its mf:// address and frame
 /// rate), into another format (see `preset`), in the background.
 pub fn convert(m: Mpv, id: String, alpha: bool, seq: Option<(String, String)>) -> thread::JoinHandle<()> {
@@ -277,7 +308,7 @@ pub fn convert(m: Mpv, id: String, alpha: bool, seq: Option<(String, String)>) -
     thread::spawn(move || {
         let Some((ext, mut settings)) = preset(&id, alpha, audio_format.as_deref()) else { return };
         let (src, src_path) = if let Some((url, fps)) = seq {
-            settings.push(("mf-fps", fps));
+            sequence_settings(&id, &fps, &mut settings);
             let path = std::path::PathBuf::from(url.trim_start_matches("mf://"));
             (url, path)
         } else {

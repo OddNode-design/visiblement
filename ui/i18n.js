@@ -105,7 +105,7 @@ const EN_RE = [
   [/^Export \((.+)\)… (\d+) %$/, (_, s, p) => `Exporting (${s === "fichier entier" ? "whole file" : s})… ${p} %`],
   [/^Conversion… (\d+) %$/, "Converting… $1 %"],
   [/^Ajouté à la liste de lecture : (.+)$/, "Added to the playlist: $1"],
-  [/^(.+) · (\d+) images$/, "$1 · $2 frames"],
+  [/^(.+) · (\d+) images$/, "$1 · $2 frames"], [/^(.+) · (\d+) images · (\d+) manquantes$/, "$1 · $2 frames · $3 missing"],
   [/^CQ (\d+) · encodé par la carte graphique$/, "CQ $1 · encoded by the graphics card"], [/^Fichier converti : (.+)$/, "Converted: $1"],
   [/^Extrait enregistré : (.+)$/, "Clip saved: $1"], [/^Frame enregistrée(.*)$/, "Frame saved$1"],
   [/^Visiblement est à jour \((.+)\)$/, "Visiblement is up to date ($1)"], [/^Connexion à (.+)…$/, "Connecting to $1…"],

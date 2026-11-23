@@ -168,33 +168,56 @@ fn is_spherical(path: &str) -> bool {
     read_moov(path).is_some_and(|moov| spherical_in(&moov))
 }
 
-/// An image of a numbered sequence (shot_0001.png, shot_0002.png…) as an mpv "mf://" address
-/// reading every image of the folder with the same name before the number and the same extension.
-fn sequence_url(image: &Path) -> Option<String> {
-    let stem = image.file_stem()?.to_string_lossy();
-    let ext = image.extension()?.to_string_lossy();
-    let prefix = stem.trim_end_matches(|c: char| c.is_ascii_digit());
+/// The images of the numbered sequence `image` belongs to (shot_0001.png, shot_0002.png…): same
+/// name before the number and same extension, in the order of their numbers (so unpadded 1, 2,
+/// 10 sort right, and shot_final.png stays out). Returns the name before the number, the
+/// extension and the images with their numbers.
+fn sequence_frames(image: &Path) -> Option<(String, String, Vec<(u64, PathBuf)>)> {
+    let stem = image.file_stem()?.to_string_lossy().into_owned();
+    let ext = image.extension()?.to_string_lossy().into_owned();
+    let prefix = stem.trim_end_matches(|c: char| c.is_ascii_digit()).to_string();
     if prefix.len() == stem.len() {
         return None; // no frame number
     }
-    let dir = image.parent()?;
-    Some(format!("mf://{}", dir.join(format!("{prefix}*.{ext}")).to_string_lossy()))
+    let mut frames: Vec<(u64, PathBuf)> = std::fs::read_dir(image.parent()?)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let same_ext = path.extension()?.to_string_lossy().eq_ignore_ascii_case(&ext);
+            let number = path.file_stem()?.to_string_lossy().strip_prefix(prefix.as_str())?.to_string();
+            (same_ext && !number.is_empty() && number.chars().all(|c| c.is_ascii_digit())).then(|| Some((number.parse().ok()?, path)))?
+        })
+        .collect();
+    frames.sort_by_key(|(n, _)| *n);
+    Some((prefix, ext, frames))
 }
 
-/// "shot_####.png · 120 images" for the Convertir dialog: the sequence `image` belongs to.
+/// The sequence as an mpv address: "mf://@<list>", a text file naming every image in order.
+/// The list is named after the sequence, so the converted file is too.
+fn sequence_url(image: &Path) -> Option<String> {
+    let (prefix, _, frames) = sequence_frames(image)?;
+    if frames.is_empty() {
+        return None;
+    }
+    let dir = std::env::temp_dir().join(format!("visiblement-seq-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).ok()?;
+    let name = if prefix.trim_matches(['_', '-', '.', ' ']).is_empty() { "sequence".to_string() } else { prefix };
+    let list = dir.join(format!("{name}.txt"));
+    let body: String = frames.iter().map(|(_, p)| format!("{}\n", p.to_string_lossy())).collect();
+    std::fs::write(&list, body).ok()?;
+    Some(format!("mf://@{}", list.to_string_lossy()))
+}
+
+/// "shot_####.png · 120 images" for the Convertir dialog, with the missing numbers if any.
 fn sequence_label(image: &Path) -> Option<String> {
+    let (prefix, ext, frames) = sequence_frames(image)?;
     let stem = image.file_stem()?.to_string_lossy();
-    let ext = image.extension()?.to_string_lossy().to_ascii_lowercase();
-    let prefix = stem.trim_end_matches(|c: char| c.is_ascii_digit());
-    let digits = stem.len() - prefix.len();
-    let count = std::fs::read_dir(image.parent()?).ok()?.flatten().filter(|e| {
-        let p = e.path();
-        let (Some(s), Some(x)) = (p.file_stem(), p.extension()) else { return false };
-        let s = s.to_string_lossy();
-        x.to_string_lossy().to_ascii_lowercase() == ext
-            && s.strip_prefix(prefix).is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
-    }).count();
-    Some(format!("{prefix}{}.{ext} · {count} images", "#".repeat(digits)))
+    let digits = stem.len() - stem.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    let (first, last) = (frames.first()?.0, frames.last()?.0);
+    let missing = (last - first + 1) as usize - frames.len();
+    let gap = if missing > 0 { format!(" · {missing} manquantes") } else { String::new() };
+    Some(format!("{prefix}{}.{} · {} images{gap}", "#".repeat(digits), ext.to_ascii_lowercase(), frames.len()))
 }
 
 /// The `moov` box of an MP4 / MOV (where tracks are described), wherever it sits in the file.
@@ -870,16 +893,34 @@ mod tests {
             .arg(seq.join("shot_%04d.png")).status().unwrap().success());
         let src = sequence_url(&seq.join("shot_0007.png")).expect("sequence");
         assert_eq!(sequence_label(&seq.join("shot_0007.png")).as_deref(), Some("shot_####.png · 25 images"));
+        assert!(src.starts_with("mf://@") && src.ends_with("shot_.txt"), "{src}");
         let out = tmp.join("seq.mov");
         let _ = std::fs::remove_file(&out);
         let (_, mut settings) = editor::preset("prores:4444", true, None).unwrap();
-        settings.push(("mf-fps", "25".into()));
+        editor::sequence_settings("prores:4444", "23.976", &mut settings);
         assert!(editor::encode_any(&m, &src, &out, &settings, |_| {}));
         let probe = std::process::Command::new("ffprobe")
-            .args(["-v", "error", "-count_frames", "-show_entries", "stream=codec_name,pix_fmt,nb_read_frames", "-of", "csv=p=0"])
+            .args(["-v", "error", "-count_frames", "-show_entries", "stream=codec_name,pix_fmt,color_space,color_primaries,color_transfer,r_frame_rate,nb_read_frames", "-of", "csv=p=0"])
             .arg(&out).output().unwrap();
         let info = String::from_utf8_lossy(&probe.stdout);
-        assert!(info.contains("prores,yuva444p") && info.contains(",25"), "every image, the last one too: {info}");
+        assert!(info.contains("prores,yuva444p"), "{info}");
+        assert!(info.contains("bt709,bt709,bt709"), "Rec.709 written in the file: {info}");
+        assert!(info.contains("24000/1001"), "exact 23.976: {info}");
+        assert!(info.trim_end().ends_with(",25"), "every image, the last one too: {info}");
+    }
+
+    #[test]
+    fn sequence_order_and_strays() {
+        let dir = std::env::temp_dir().join(format!("vb-seq-order-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        for f in ["plan_1.png", "plan_2.png", "plan_10.png", "plan_final.png", "plan_3.jpg", "autre_4.png"] {
+            std::fs::write(dir.join(f), b"").unwrap();
+        }
+        let (_, _, frames) = sequence_frames(&dir.join("plan_2.png")).unwrap();
+        let names: Vec<_> = frames.iter().map(|(_, p)| p.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["plan_1.png", "plan_2.png", "plan_10.png"]);
+        assert_eq!(sequence_label(&dir.join("plan_2.png")).as_deref(), Some("plan_#.png · 3 images · 7 manquantes"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Every "Convertir" format through the bundled libmpv (needs ffmpeg / ffprobe on PATH).
