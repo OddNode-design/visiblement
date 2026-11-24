@@ -455,6 +455,8 @@ pub fn run() -> Result<(), String> {
     let mut grab: Option<Grab> = None;
     let mut last_cursor = (0.0f64, f64::MAX);
     let (mut ui_ready, mut update_offer): (bool, Option<(String, bool)>) = (false, None);
+    // A file opened from Explorer starts loading before the page is up: "ready" replays the loader.
+    let mut loading = false;
     let show_update = |webview: &WebView, tag: &str, prompt: bool| {
         let info = json!({ "latest": tag, "current": env!("CARGO_PKG_VERSION"), "prompt": prompt, "installable": crate::update::installable() });
         eval(webview, &format!("window.vb && vb.updateAvailable({info})"));
@@ -481,7 +483,10 @@ pub fn run() -> Result<(), String> {
                         *flow = ControlFlow::WaitUntil(flush_at.unwrap());
                     }
                 }
-                UserEvent::Loading(on) => eval(&webview, &format!("window.vb && vb.loading({on})")),
+                UserEvent::Loading(on) => {
+                    loading = on;
+                    eval(&webview, &format!("window.vb && vb.loading({on})"));
+                }
                 UserEvent::VideoSize(w, h) => fit_to_video(&ui, &mode, w, h),
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
                 UserEvent::Eval(js) => eval(&webview, &js),
@@ -528,6 +533,9 @@ pub fn run() -> Result<(), String> {
                             }
                             all.insert("alpha".into(), Value::String(has_alpha(&m).to_string()));
                             eval(&webview, &format!("window.vb && vb.update({})", Value::Object(all)));
+                            if loading {
+                                eval(&webview, "window.vb && vb.loading(true)");
+                            }
                         }
                         "cmd" => {
                             let args: Vec<String> = msg
