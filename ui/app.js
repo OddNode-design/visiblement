@@ -253,7 +253,7 @@ const dots = Array.from({ length: 25 }, () => $("loader").appendChild(document.c
 let loadingSince = 0, loaderRaf = 0;
 function dotLevel(t, i, j) {
   const dx = Math.abs(i - 2), dy = Math.abs(j - 2);
-  const d = [Math.max(dx, dy), dx + dy, (i + j) / 2, Math.hypot(dx, dy)][Math.floor(t / 0.9) % 4];
+  const d = Math.hypot(dx, dy); // one pattern only: a ripple from the centre
   const wave = (Math.sin(t * 7 - d * 1.6) + 1) / 2;
   return 0.12 + 0.88 * wave * wave;
 }
