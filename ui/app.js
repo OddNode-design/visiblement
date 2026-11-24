@@ -646,22 +646,33 @@ $("burger").onclick = () => { const open = !$("titlebar").classList.contains("me
 
 // Responsive title bar: the centred navigation needs room on both sides of it. When the window is
 // too narrow, it folds into the burger; the title takes what is left, then the resolution goes.
+let navW = 0, resKey = null, resWidth = 0;
 function fitTitleBar() {
   const bar = $("titlebar");
-  // Measured laid out in a row (not as the burger panel); dropdowns are left out of the width.
-  bar.classList.remove("compact");
-  const navW = navItems.reduce((w, i) => w + i.offsetWidth, 6 * (navItems.length - 1)), barW = bar.clientWidth;
+  // Nav width laid out in a row (not as the burger panel), dropdowns left out. Measured only when
+  // not folded: dropping "compact" for a moment on every time update restarted the open
+  // burger panel's transitions, so it blinked during playback.
+  if (!bar.classList.contains("compact") || !navW) {
+    bar.classList.remove("compact");
+    navW = navItems.reduce((w, i) => w + i.offsetWidth, 6 * (navItems.length - 1));
+  }
+  const barW = bar.clientWidth;
   const right = [...bar.querySelectorAll(".pos, .wbtn")].reduce((w, e) => w + e.offsetWidth + 10, 4);
   const left = 12 + 22 + 10; // padding, logo, gap
   const compact = barW / 2 - navW / 2 < Math.max(left + 90, right) + 12;
   bar.classList.toggle("compact", compact);
   if (!compact) setBurger(false);
-  const resW = $("res").textContent ? $("res").offsetWidth + 10 : 0;
+  // The resolution measures 0 while hidden by no-res: keep its width from when it showed, or the
+  // class flipped on and off at every update.
+  const resText = $("res").textContent;
+  if (resText !== resKey) { bar.classList.remove("no-res"); resKey = resText; resWidth = $("res").offsetWidth; }
+  const resW = resText ? resWidth + 10 : 0;
   const room = compact ? barW - right - left - 42 - 12 : barW / 2 - navW / 2 - left - 16;
   bar.classList.toggle("no-res", room - resW < 90);
   bar.style.setProperty("--title-max", Math.max(40, room - (room - resW < 90 ? 0 : resW)) + "px");
 }
 new ResizeObserver(fitTitleBar).observe($("titlebar"));
+document.fonts.ready.then(() => { navW = 0; fitTitleBar(); }); // Roboto may land after the first measure
 new MutationObserver(fitTitleBar).observe($("pos"), { childList: true, characterData: true, subtree: true });
 new MutationObserver(fitTitleBar).observe($("res"), { childList: true, characterData: true, subtree: true });
 navItems.forEach(item => {
@@ -888,7 +899,7 @@ $("convGo").onclick = () => {
 // Language: saved in settings.json by Rust (localStorage in a plain browser preview).
 function setLang(code) {
   i18n.set(code);
-  fitTitleBar(); // English labels have other widths
+  navW = 0; fitTitleBar(); // English labels have other widths
   send({ t: "lang", v: i18n.lang });
   try { localStorage.setItem("lang", i18n.lang); } catch {}
 }
