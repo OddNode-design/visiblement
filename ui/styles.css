@@ -286,16 +286,16 @@
   /* Invisible bridge over the gap, so moving from the button to the menu never closes it */
   .dropdown::before { content: ""; position: absolute; left: 0; right: 0; top: -12px; height: 12px; }
   .subdrop::before { top: 0; bottom: 0; left: -12px; right: auto; width: 12px; height: auto; }
-  .dd { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: flex-start; gap: 12px; padding: 9px 10px;
-    border-radius: 999px; cursor: pointer; position: relative; }
+  .dd { all: unset; box-sizing: border-box; width: 100%; display: flex; align-items: center; gap: 12px; padding: 9px 14px;
+    border-radius: 8px; /* concentric with the dropdown: 14px radius - 6px padding */ cursor: pointer; position: relative; }
   .dd:hover { background: rgba(255, 255, 255, .06); }
-  .dd > .ico { width: 18px; height: 18px; flex: none; margin-top: 1px; color: var(--muted); }
+  .dd > .ico { width: 18px; height: 18px; flex: none; color: var(--muted); }
   .dd:hover > .ico { color: var(--fg); }
   .dd-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .dd-text b { font-size: 13px; font-weight: 600; }
   .dd-text small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dd kbd { font: 12px Roboto, sans-serif; color: var(--muted); margin-top: 1px; }
-  .dd .more { width: 14px; height: 14px; margin-top: 3px; color: var(--muted); }
+  .dd kbd { font: 12px Roboto, sans-serif; color: var(--muted); }
+  .dd .more { width: 14px; height: 14px; color: var(--muted); }
   .dd.disabled { opacity: .45; pointer-events: none; }
   /* Recent media: opens to the right on hover */
   .subdrop { top: -7px; left: 100%; transform: translate(4px, 0) scale(.98); transform-origin: top left; min-width: 340px; max-width: 420px; }
