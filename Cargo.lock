@@ -2540,6 +2540,10 @@ version = "1.0.12"
 dependencies = [
  "arboard",
  "libloading",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-core-foundation",
+ "objc2-foundation",
  "png",
  "rfd",
  "serde_json",

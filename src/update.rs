@@ -2,12 +2,17 @@
 //! hands over to Windows Installer (which upgrades in place) and relaunches the app.
 
 use crate::app;
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
 use std::path::PathBuf;
 use std::sync::Mutex;
+#[cfg(windows)]
 use std::thread;
+#[cfg(windows)]
 use std::time::Duration;
 
+#[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// The newer release's installer: (tag, download URL, size in bytes).
@@ -31,8 +36,9 @@ pub fn remember(tag: &str, asset: Option<(String, u64)>) {
 }
 
 /// True when the update can be installed from inside the app (an .msi is attached to the release).
+/// Never on macOS: the page then links to the release instead.
 pub fn installable() -> bool {
-    ASSET.lock().map(|a| a.is_some()).unwrap_or(false)
+    cfg!(windows) && ASSET.lock().map(|a| a.is_some()).unwrap_or(false)
 }
 
 fn ui(js: &str) {
@@ -40,11 +46,19 @@ fn ui(js: &str) {
 }
 
 /// Where the .msi installs the app (per-user install, see installer/visiblement.wxs).
+#[cfg(windows)]
 fn installed_exe() -> Option<PathBuf> {
     std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Programs").join("Visiblement").join("visiblement.exe"))
 }
 
+/// No in-app install on macOS (the page never offers it, see `installable`).
+#[cfg(not(windows))]
+pub fn install() {
+    ui("vb.updateFailed()");
+}
+
 /// Downloads the installer (progress → `vb.updateProgress(pct)`), then runs it and closes the app.
+#[cfg(windows)]
 pub fn install() {
     let Some((tag, url, size)) = ASSET.lock().ok().and_then(|a| a.clone()) else {
         ui("vb.updateFailed()");
@@ -53,11 +67,10 @@ pub fn install() {
     thread::spawn(move || {
         let dest = std::env::temp_dir().join(format!("Visiblement-{tag}-x64.msi"));
         let _ = std::fs::remove_file(&dest);
-        let child = std::process::Command::new("curl.exe")
+        let child = crate::curl()
             .args(["-L", "-s", "-f", "-m", "600", "-o"])
             .arg(&dest)
             .arg(&url)
-            .creation_flags(CREATE_NO_WINDOW)
             .spawn();
         let Ok(mut child) = child else {
             ui("vb.updateFailed()");

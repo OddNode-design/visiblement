@@ -1,0 +1,38 @@
+name: macOS
+
+# Builds the macOS app and DMG on a GitHub Mac, then opens a test video in it and keeps
+# screenshots and logs as artifacts (nobody on the team has a Mac).
+on:
+  push:
+    branches: [macos]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  dmg:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-14]          # Apple Silicon
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Homebrew dependencies
+        run: brew install mpv dylibbundler ffmpeg
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Tests
+        run: cargo test --release -p visiblement
+      - name: App and DMG
+        run: bash packaging/macos/build-dmg.sh
+      - name: Smoke test (opens a video, takes screenshots)
+        run: bash packaging/macos/smoke-test.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visiblement-${{ matrix.runner }}
+          path: |
+            dist/*.dmg
+            dist/smoke/*.png
+            dist/smoke/*.log
+            dist/smoke/*.txt
+          if-no-files-found: warn

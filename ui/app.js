@@ -1,6 +1,10 @@
 const $ = id => document.getElementById(id);
 const win = $("win"), stage = $("stage");
 
+// macOS: shortcuts use Cmd where Windows uses Ctrl; the root gets a "mac" class for platform styling.
+const IS_MAC = /Mac/.test(navigator.platform);
+if (IS_MAC) document.documentElement.classList.add("mac");
+
 // --- Bridge to the Rust side (src/app.rs)
 const send = msg => window.ipc?.postMessage(JSON.stringify(msg)); // no-op outside the app (browser preview)
 const cmd = (...a) => send({ t: "cmd", a: a.map(String) });
@@ -570,7 +574,7 @@ document.querySelectorAll(".grip").forEach(g => {
 
 // --- Keyboard
 addEventListener("keydown", ev => {
-  const k = ev.key, c = ev.ctrlKey;
+  const k = ev.key, c = ev.ctrlKey || (IS_MAC && ev.metaKey);
   if (k === "Escape") {
     const open = document.querySelector(".modal-back.open:not(#updateBack)");
     if (open) closeModal(open); else if (closeNav()) {} else if (anyMenuOpen()) closeAll(); else if (win.classList.contains("fullscreen")) $("fs").onclick();

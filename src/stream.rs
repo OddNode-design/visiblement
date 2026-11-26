@@ -2,12 +2,13 @@
 //! web video pages (YouTube, Vimeo…), which mpv plays through its ytdl hook.
 
 use crate::{app, Mpv};
-use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::thread;
 
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+#[cfg(windows)]
 const YTDLP_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
+#[cfg(target_os = "macos")]
+const YTDLP_URL: &str = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos";
 
 /// Turns what the user typed into an address mpv understands, or None if it isn't one.
 /// - `www.site.com/…` gets https://
@@ -46,7 +47,7 @@ pub fn needs_ytdl(url: &str) -> bool {
 
 /// Where the app keeps yt-dlp (it is downloaded the first time it is needed).
 pub fn ytdlp_path() -> Option<PathBuf> {
-    std::env::var_os("LOCALAPPDATA").map(|d| PathBuf::from(d).join("Visiblement").join("yt-dlp.exe"))
+    crate::data_dir(true).map(|d| d.join(if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" }))
 }
 
 /// Opens a network address; for web pages, installs yt-dlp first if it is missing.
@@ -67,13 +68,13 @@ pub fn open(m: Mpv, input: &str) {
             let _ = std::fs::create_dir_all(dir);
         }
         let part = dest.with_extension("part");
-        let ok = std::process::Command::new("curl.exe")
+        let ok = crate::curl()
             .args(["-L", "-s", "-f", "-m", "300", "-o"])
             .arg(&part)
             .arg(YTDLP_URL)
-            .creation_flags(CREATE_NO_WINDOW)
             .status()
             .is_ok_and(|s| s.success())
+            && make_executable(&part)
             && std::fs::rename(&part, &dest).is_ok();
         if ok {
             m.cmd(&["loadfile", &url, "replace"]);
@@ -82,6 +83,20 @@ pub fn open(m: Mpv, input: &str) {
             app::toast("Impossible d'installer yt-dlp : vérifie la connexion");
         }
     });
+}
+
+/// The macOS yt-dlp is a bare executable: it must be marked as one. Nothing to do on Windows.
+fn make_executable(path: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).is_ok()
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        true
+    }
 }
 
 #[cfg(test)]

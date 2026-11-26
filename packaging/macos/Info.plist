@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Visiblement</string>
+  <key>CFBundleDisplayName</key><string>Visiblement</string>
+  <key>CFBundleIdentifier</key><string>design.oddnode.visiblement</string>
+  <key>CFBundleExecutable</key><string>visiblement</string>
+  <key>CFBundleIconFile</key><string>Visiblement</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>__VERSION__</string>
+  <key>CFBundleVersion</key><string>__VERSION__</string>
+  <key>LSMinimumSystemVersion</key><string>__MIN_MACOS__</string>
+  <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
+  <key>NSHighResolutionCapable</key><true/>
+  <key>NSHumanReadableCopyright</key><string>MIT License</string>
+  <!-- "Open with" for the same media types as the Windows installer -->
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key><string>Video</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.movie</string>
+        <string>public.mpeg-4</string>
+        <string>com.apple.quicktime-movie</string>
+        <string>org.matroska.mkv</string>
+        <string>org.webmproject.webm</string>
+        <string>public.avi</string>
+        <string>com.apple.m4v-video</string>
+        <string>org.smpte.mxf</string>
+      </array>
+      <key>CFBundleTypeExtensions</key>
+      <array><string>mp4</string><string>mov</string><string>mkv</string><string>webm</string><string>avi</string><string>m4v</string><string>mxf</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Animated image</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array><string>com.compuserve.gif</string><string>org.webmproject.webp</string><string>public.png</string></array>
+      <key>CFBundleTypeExtensions</key>
+      <array><string>gif</string><string>webp</string><string>apng</string></array>
+    </dict>
+    <dict>
+      <key>CFBundleTypeName</key><string>Audio</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>LSHandlerRank</key><string>Alternate</string>
+      <key>LSItemContentTypes</key>
+      <array><string>com.microsoft.waveform-audio</string><string>public.mp3</string><string>org.xiph.flac</string><string>com.apple.m4a-audio</string><string>public.audio</string></array>
+      <key>CFBundleTypeExtensions</key>
+      <array><string>wav</string><string>mp3</string><string>flac</string><string>m4a</string></array>
+    </dict>
+  </array>
+</dict>
+</plist>

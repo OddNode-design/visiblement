@@ -8,11 +8,33 @@ use std::{ptr, thread};
 
 mod app;
 mod editor;
+#[cfg(target_os = "macos")]
+mod mac;
 mod markers;
 mod ndi;
 mod stream;
-mod single;
 mod update;
+
+// One instance at a time through a named pipe is Windows' business: on macOS, LaunchServices
+// already keeps one instance and hands files over as Apple Events (tao's `Event::Opened`).
+#[cfg(windows)]
+mod single;
+#[cfg(not(windows))]
+mod single {
+    use std::path::PathBuf;
+
+    pub type Handle = ();
+
+    pub fn forward(_paths: &[PathBuf]) -> Option<Handle> {
+        None
+    }
+
+    pub fn serve(_first: Handle, _on_open: impl Fn(Vec<PathBuf>) + Send + 'static) {}
+}
+
+// On macOS the window helpers of `win` live in mac.rs, under the same names.
+#[cfg(target_os = "macos")]
+use mac as win;
 
 use app::run;
 
@@ -73,11 +95,39 @@ struct Mpv {
     command: unsafe extern "C" fn(Handle, *const *const c_char) -> c_int,
     request_log: unsafe extern "C" fn(Handle, *const c_char) -> c_int,
     free: unsafe extern "C" fn(*mut c_void),
+    /// macOS: mpv has no `wid` there, the picture goes through the render API (see mac.rs).
+    #[cfg(target_os = "macos")]
+    render: mac::RenderApi,
 }
 
 // SAFETY: the libmpv client API is thread-safe, and the handle is only destroyed
 // after every worker thread has been joined.
 unsafe impl Send for Mpv {}
+
+/// `curl` without a console window flashing (curl.exe ships with Windows 10+, curl with macOS).
+fn curl() -> std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut c = std::process::Command::new("curl.exe");
+        c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        c
+    }
+    #[cfg(not(windows))]
+    std::process::Command::new("curl")
+}
+
+/// Where the app keeps its files: %APPDATA% (`local` false) or %LOCALAPPDATA% (`local`), then
+/// \Visiblement, on Windows; ~/Library/Application Support/Visiblement on macOS.
+fn data_dir(local: bool) -> Option<PathBuf> {
+    #[cfg(windows)]
+    return std::env::var_os(if local { "LOCALAPPDATA" } else { "APPDATA" }).map(|d| PathBuf::from(d).join(APP));
+    #[cfg(not(windows))]
+    {
+        let _ = local;
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library").join("Application Support").join(APP))
+    }
+}
 
 fn cstr(s: &str) -> CString {
     // Interior NULs cannot come from mpv or the OS; drop them rather than fail.
@@ -338,11 +388,9 @@ fn parse_version(v: &str) -> Vec<u32> {
 
 /// Newest release tag from the redirect of github.com/<repo>/releases/latest (no API quota).
 fn latest_tag_by_redirect() -> Option<String> {
-    use std::os::windows::process::CommandExt;
-    let out = std::process::Command::new("curl.exe")
-        .args(["-s", "-m", "5", "-o", "NUL", "-w", "%{redirect_url}"])
+    let out = curl()
+        .args(["-s", "-m", "5", "-o", if cfg!(windows) { "NUL" } else { "/dev/null" }, "-w", "%{redirect_url}"])
         .arg(format!("https://github.com/{REPO}/releases/latest"))
-        .creation_flags(0x0800_0000)
         .output()
         .ok()?;
     tag_from_release_url(&String::from_utf8_lossy(&out.stdout))
@@ -366,13 +414,11 @@ fn tag_name(json: &str) -> Option<&str> {
 /// ticked, in which case only the discreet update button lights up.
 /// From that button (`manual` true): always answers, with the prompt or a toast.
 fn check_for_update(manual: bool) {
-    use std::os::windows::process::CommandExt;
     thread::spawn(move || {
-        // curl.exe ships with Windows 10+; CREATE_NO_WINDOW keeps it invisible. Offline = silent.
-        let Ok(out) = std::process::Command::new("curl.exe")
+        // curl ships with Windows 10+ and macOS; no console window. Offline = silent.
+        let Ok(out) = curl()
             .args(["-s", "-m", "5", "-H", "Accept: application/vnd.github+json"])
             .arg(format!("https://api.github.com/repos/{REPO}/releases/latest"))
-            .creation_flags(0x0800_0000)
             .output()
         else {
             if manual {
@@ -414,9 +460,9 @@ fn check_for_update(manual: bool) {
     });
 }
 
-/// Settings kept across launches: %APPDATA%\Visiblement\settings.json.
+/// Settings kept across launches: %APPDATA%\Visiblement\settings.json (macOS: in Application Support).
 fn settings_path() -> Option<PathBuf> {
-    std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join(APP).join("settings.json"))
+    data_dir(false).map(|d| d.join("settings.json"))
 }
 
 fn read_settings() -> serde_json::Map<String, serde_json::Value> {
@@ -503,6 +549,7 @@ fn add_recent_media(path: &str) {
 /// Video capture devices, by the names DirectShow uses: plugged-in webcams and capture cards,
 /// plus virtual cameras registered as DirectShow filters (OBS Virtual Camera, NVIDIA Broadcast,
 /// NDI Webcam from NDI Tools…).
+#[cfg(windows)]
 fn list_cameras() -> Vec<String> {
     use std::os::windows::process::CommandExt;
     let script = r"
@@ -517,6 +564,12 @@ fn list_cameras() -> Vec<String> {
         .output()
         .map(|o| String::from_utf8_lossy(&o.stdout).lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect())
         .unwrap_or_default()
+}
+
+/// Cameras are listed through DirectShow, which macOS does not have: none offered there.
+#[cfg(not(windows))]
+fn list_cameras() -> Vec<String> {
+    Vec::new()
 }
 
 /// Everything the "Infos" panel shows, gathered from mpv and the file system.
@@ -553,18 +606,27 @@ fn exe_dir() -> PathBuf {
 }
 
 /// Loads libmpv-2.dll (next to the exe, else from PATH) and resolves the client API.
+/// On macOS: libmpv.2.dylib from <app>/Contents/Frameworks, else next to the exe, else by name.
 /// The returned `Mpv` has no handle yet (`h` is null); keep the `Library` alive while it is used.
 fn load_mpv(dir: &Path) -> Result<(Library, Mpv), String> {
-    // SAFETY: loading libmpv runs its DllMain, which has no unusual requirements.
+    // SAFETY: loading libmpv runs its initializers, which have no unusual requirements.
+    #[cfg(windows)]
     let lib = unsafe { Library::new(dir.join("libmpv-2.dll")) }
         .or_else(|_| unsafe { Library::new("libmpv-2.dll") })
         .map_err(|e| format!("libmpv-2.dll introuvable à côté de visiblement.exe.
 
 {e}"))?;
+    #[cfg(target_os = "macos")]
+    let lib = unsafe { Library::new(dir.join("../Frameworks/libmpv.2.dylib")) }
+        .or_else(|_| unsafe { Library::new(dir.join("libmpv.2.dylib")) })
+        .or_else(|_| unsafe { Library::new("libmpv.2.dylib") })
+        .map_err(|e| format!("libmpv.2.dylib introuvable (Contents/Frameworks).
+
+{e}"))?;
     macro_rules! sym {
         ($name:literal) => {
             // SAFETY: each target type matches the declaration in mpv/client.h (client API v2).
-            *unsafe { lib.get(concat!($name, " ").as_bytes()) }
+            *unsafe { lib.get(concat!($name, "\0").as_bytes()) }
                 .map_err(|e| format!("Fonction {} absente de libmpv : {e}", $name))?
         };
     }
@@ -584,10 +646,20 @@ fn load_mpv(dir: &Path) -> Result<(Library, Mpv), String> {
         command: sym!("mpv_command"),
         request_log: sym!("mpv_request_log_messages"),
         free: sym!("mpv_free"),
+        #[cfg(target_os = "macos")]
+        render: mac::RenderApi {
+            create: sym!("mpv_render_context_create"),
+            set_update_callback: sym!("mpv_render_context_set_update_callback"),
+            update: sym!("mpv_render_context_update"),
+            render: sym!("mpv_render_context_render"),
+            report_swap: sym!("mpv_render_context_report_swap"),
+            free: sym!("mpv_render_context_free"),
+        },
     };
     Ok((lib, m))
 }
 
+#[cfg(windows)]
 mod win {
     /// Opens Explorer with the file selected.
     pub fn show_in_folder(path: &str) {
@@ -790,6 +862,12 @@ mod win {
 
 }
 
+#[cfg(target_os = "macos")]
+fn alert(msg: &str) {
+    mac::alert(msg);
+}
+
+#[cfg(windows)]
 fn alert(msg: &str) {
     // SAFETY: both buffers are NUL-terminated UTF-16 and live for the call. 0x10 = MB_ICONERROR.
     unsafe { win::MessageBoxW(ptr::null_mut(), win::wide(msg).as_ptr(), win::wide(APP).as_ptr(), 0x10) };

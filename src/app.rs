@@ -4,6 +4,10 @@
 //! and, owned by it so it always stays on top, a transparent window holding a WebView with
 //! `ui/index.html`. The UI window is the one the user moves and resizes; the video window
 //! follows it, sitting just below the dedicated title bar.
+//!
+//! macOS: same two windows, but mpv has no `wid` there, so it draws through the libmpv render API
+//! into an OpenGL view of the video window (mac.rs), and the video window is a child of the UI
+//! window (the one that moves) so that the two travel together.
 
 use crate::{
     copy_frame, exe_dir, has_alpha, is_animated_image, load_markers, load_mpv, save_frame, win, Event as MpvEvent, Mpv,
@@ -20,10 +24,35 @@ use std::time::{Duration, Instant};
 use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
+#[cfg(target_os = "macos")]
+use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
+#[cfg(windows)]
 use tao::platform::windows::{IconExtWindows, WindowBuilderExtWindows, WindowExtWindows};
 use tao::window::{Icon, Window, WindowBuilder};
 use wry::http::{header::CONTENT_TYPE, Request, Response, StatusCode};
 use wry::{DragDropEvent, WebView, WebViewBuilder};
+
+/// The native handle the `win` helpers work on: the HWND (Windows) or the NSWindow pointer (macOS).
+fn hnd(w: &Window) -> isize {
+    #[cfg(windows)]
+    return w.hwnd();
+    #[cfg(target_os = "macos")]
+    return w.ns_window() as isize;
+}
+
+/// Page address: WebView2 serves custom protocols over http://<name>.localhost, WKWebView as <name>://localhost.
+const START_URL: &str = if cfg!(windows) { "http://vb.localhost/index.html" } else { "vb://localhost/index.html" };
+
+/// The `ui` folder: next to the exe, on macOS inside the bundle (Contents/Resources/ui) when there is one.
+fn ui_folder(exe_dir: &Path) -> PathBuf {
+    let bundled = exe_dir.join("../Resources/ui");
+    if cfg!(target_os = "macos") && bundled.is_dir() { bundled } else { exe_dir.join("ui") }
+}
+
+/// Minimizes / restores the app. macOS: the UI window is the parent, its child (video) follows.
+fn minimize(ui: &Window, video: &Window, on: bool) {
+    if cfg!(target_os = "macos") { ui.set_minimized(on) } else { video.set_minimized(on) }
+}
 
 /// Height of the dedicated title bar, in CSS pixels (must match `--titlebar` in ui/index.html).
 const TITLE_BAR: f64 = 40.0;
@@ -52,7 +81,8 @@ pub enum UserEvent {
     Eval(String),
     /// Files opened while the app runs (a second launch, see single.rs).
     Open(Vec<PathBuf>),
-    /// Close the app (e.g. to let the installer replace it).
+    /// Close the app (e.g. to let the installer replace it: Windows only).
+    #[cfg_attr(not(windows), allow(dead_code))]
     Close,
     Quit,
 }
@@ -75,6 +105,7 @@ pub fn eval_js(js: &str) {
     send(UserEvent::Eval(js.to_string()));
 }
 
+#[cfg_attr(not(windows), allow(dead_code))]
 pub fn request_close() {
     send(UserEvent::Close);
 }
@@ -142,16 +173,21 @@ fn sync_video(ui: &Window, video: &Window, m: Option<&Mpv>, mode: &Mode) {
     let bar = if fullscreen { 0.0 } else { (TITLE_BAR * ui.scale_factor()).round() };
     let rect = (pos.x, pos.y, size.width as i32, size.height as i32);
     // Called on every move / resize step: only what changed is sent to Windows and mpv.
-    if win::window_rect(video.hwnd()) != Some(rect) {
-        win::place_frameless(video.hwnd(), rect.0, rect.1, rect.2, rect.3);
+    if win::window_rect(hnd(video)) != Some(rect) {
+        win::place_frameless(hnd(video), rect.0, rect.1, rect.2, rect.3);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        win::set_render_size(size.width, size.height);
+        win::presentation(fullscreen);
     }
     static LAST: Mutex<(Option<bool>, String)> = Mutex::new((None, String::new()));
     let Ok(mut last) = LAST.lock() else { return };
     let round = matches!(mode, Mode::Normal);
     if last.0 != Some(round) {
         // Both windows get the same Windows-drawn corners: the page draws none, so their shapes match exactly.
-        win::round_corners(video.hwnd(), round);
-        win::round_corners(ui.hwnd(), round);
+        win::round_corners(hnd(video), round);
+        win::round_corners(hnd(ui), round);
         last.0 = Some(round);
     }
     if let Some(m) = m {
@@ -262,7 +298,7 @@ type Rect = (i32, i32, i32, i32);
 /// The window's real rectangle, asked to Windows: tao's cached values can lag behind our own
 /// SetWindowPos calls (maximize / fullscreen / drag-out are done here, not through tao).
 fn rect_of(ui: &Window) -> Rect {
-    win::window_rect(ui.hwnd()).unwrap_or_else(|| {
+    win::window_rect(hnd(ui)).unwrap_or_else(|| {
         let p = ui.outer_position().unwrap_or_default();
         let s = ui.outer_size();
         (p.x, p.y, s.width as i32, s.height as i32)
@@ -338,7 +374,7 @@ pub fn run() -> Result<(), String> {
     let args: Vec<PathBuf> = std::env::args_os().skip(1).map(PathBuf::from).collect();
     let pipe = crate::single::forward(&args);
     let dir = exe_dir();
-    let ui_dir = dir.join("ui");
+    let ui_dir = ui_folder(&dir);
     let (_lib, api) = load_mpv(&dir)?;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -346,31 +382,36 @@ pub fn run() -> Result<(), String> {
     if let Some(pipe) = pipe {
         crate::single::serve(pipe, |paths| send(UserEvent::Open(paths)));
     }
+    // macOS takes the Dock icon from the app bundle.
+    #[cfg(windows)]
     let icon = Icon::from_resource(1, None).ok();
+    #[cfg(not(windows))]
+    let icon: Option<Icon> = None;
 
     // Video window: taskbar entry and owner of the UI window.
     let video = WindowBuilder::new()
         .with_title(APP)
         .with_decorations(false)
-        .with_undecorated_shadow(false)
         .with_window_icon(icon.clone())
-        .with_inner_size(LogicalSize::new(1280.0, 720.0))
-        .build(&event_loop)
-        .map_err(|e| e.to_string())?;
+        .with_inner_size(LogicalSize::new(1280.0, 720.0));
+    #[cfg(windows)]
+    let video = video.with_undecorated_shadow(false);
+    let video = video.build(&event_loop).map_err(|e| e.to_string())?;
     // UI window: transparent, on top of the video window, follows nothing (it is the one moved).
     let ui = WindowBuilder::new()
         .with_title(APP)
         .with_decorations(false)
         .with_transparent(true)
-        .with_undecorated_shadow(false)
         .with_window_icon(icon)
-        .with_owner_window(video.hwnd() as _)
-        .with_skip_taskbar(true)
         .with_visible(false) // shown once its hidden frame is gone, so it never paints one
         .with_inner_size(LogicalSize::new(1280.0, 720.0 + TITLE_BAR))
-        .with_min_inner_size(LogicalSize::new(MIN_W, MIN_H))
-        .build(&event_loop)
-        .map_err(|e| e.to_string())?;
+        .with_min_inner_size(LogicalSize::new(MIN_W, MIN_H));
+    #[cfg(windows)]
+    let ui = ui.with_undecorated_shadow(false).with_owner_window(video.hwnd() as _).with_skip_taskbar(true);
+    // macOS: no shadow around the transparent UI window (the video window carries the shadow).
+    #[cfg(target_os = "macos")]
+    let ui = ui.with_has_shadow(false);
+    let ui = ui.build(&event_loop).map_err(|e| e.to_string())?;
     if let Some(mon) = ui.current_monitor() {
         let s = ui.outer_size();
         let (mx, my) = (mon.position().x, mon.position().y);
@@ -380,9 +421,16 @@ pub fn run() -> Result<(), String> {
         ));
     }
     // Our own move / resize / maximize: the UI window needs no hidden caption or frame at all.
-    win::strip_frame(ui.hwnd());
-    win::never_paint_frame(ui.hwnd());
+    win::strip_frame(hnd(&ui));
+    win::never_paint_frame(hnd(&ui));
     ui.set_visible(true);
+    // macOS: the video window is a child of the UI window, so it follows every move of it, and sits
+    // below it. It never takes clicks: the UI window (transparent over the picture) gets them.
+    #[cfg(target_os = "macos")]
+    {
+        win::attach_child(hnd(&ui), hnd(&video));
+        let _ = video.set_ignore_cursor_events(true);
+    }
     sync_video(&ui, &video, None, &Mode::Normal);
     let mut mode = Mode::Normal;
 
@@ -393,9 +441,17 @@ pub fn run() -> Result<(), String> {
     }
     let m = Mpv { h, ..api };
     m.option("config", "no");
+    #[cfg(windows)]
     m.option("wid", &video.hwnd().to_string());
     for (k, v) in OPTIONS {
         m.option(k, v);
+    }
+    // macOS: no `wid`; the frames are pulled through the render API (src/mac.rs). No forced window:
+    // the libmpv video output only exists once the render context does.
+    #[cfg(target_os = "macos")]
+    {
+        m.option("vo", "libmpv");
+        m.option("force-window", "no");
     }
     // Volume and mute as they were when the app last closed.
     for (k, v) in crate::saved_volume() {
@@ -413,6 +469,14 @@ pub fn run() -> Result<(), String> {
         unsafe { (m.destroy)(h) };
         return Err("Impossible d'initialiser mpv.".into());
     }
+    #[cfg(target_os = "macos")]
+    let mut renderer = match win::start_render(&m, video.ns_view()) {
+        Ok(r) => r,
+        Err(e) => {
+            unsafe { (m.destroy)(h) };
+            return Err(e);
+        }
+    };
     sync_video(&ui, &video, Some(&m), &Mode::Normal); // picture below the title bar from the start
     // Before each file opens: turn WAV markers (cue points, After Effects XMP) into chapters.
     unsafe { (m.hook_add)(h, 0, c"on_load".as_ptr(), 0) };
@@ -430,7 +494,7 @@ pub fn run() -> Result<(), String> {
         .with_background_color((0, 0, 0, 0))
         .with_devtools(cfg!(debug_assertions))
         .with_custom_protocol("vb".into(), move |_id, req| serve(&ui_dir, &req))
-        .with_url("http://vb.localhost/index.html")
+        .with_url(START_URL)
         .with_ipc_handler(move |req: Request<String>| {
             let _ = proxy_ipc.send_event(UserEvent::Ipc(req.body().clone()));
         })
@@ -497,7 +561,7 @@ pub fn run() -> Result<(), String> {
                 // Opened from Explorer while running: replaces what plays (the playlist is built
                 // only by dropping files on it), and the window comes to the front.
                 UserEvent::Open(paths) => {
-                    video.set_minimized(false);
+                    minimize(&ui, &video, false);
                     ui.set_focus();
                     if !paths.is_empty() {
                         load_paths(&m, &paths, false);
@@ -592,7 +656,7 @@ pub fn run() -> Result<(), String> {
                                 }
                                 eval(&webview, "window.vb && vb.maximized(false)");
                                 mode = Mode::Normal;
-                                win::set_rect(ui.hwnd(), (nx, ny, prev.2, prev.3));
+                                win::set_rect(hnd(&ui), (nx, ny, prev.2, prev.3));
                                 sync_video(&ui, &video, Some(&m), &mode);
                                 grab = Some(Grab {
                                     dir: String::new(),
@@ -616,36 +680,36 @@ pub fn run() -> Result<(), String> {
                                     let min = (MIN_W * ui.scale_factor(), MIN_H * ui.scale_factor());
                                     let (px, py, w, h) = g.apply(x, y, min);
                                     let r = |v: f64| v.round() as i32;
-                                    win::move_pair(ui.hwnd(), video.hwnd(), (r(px), r(py), r(w), r(h)));
+                                    win::move_pair(hnd(&ui), hnd(&video), (r(px), r(py), r(w), r(h)));
                                 }
                             }
                             // Released at the top edge of the screen: maximize, like Windows' snap.
                             "grab-end" => {
                                 if let Some(g) = grab.take()
                                     && g.dir.is_empty()
-                                    && let Some((monitor, work)) = win::monitor_rects(ui.hwnd())
+                                    && let Some((monitor, work)) = win::monitor_rects(hnd(&ui))
                                     && last_cursor.1 <= (monitor.1 + 3) as f64
                                 {
                                     let prev = (g.pos.x, g.pos.y, g.size.width as i32, g.size.height as i32);
-                                    win::set_rect(ui.hwnd(), work);
+                                    win::set_rect(hnd(&ui), work);
                                     mode = Mode::Maximized { prev };
                                     eval(&webview, "window.vb && vb.maximized(true)");
                                     sync_video(&ui, &video, Some(&m), &mode);
                                 }
                             }
-                            "min" => video.set_minimized(true),
+                            "min" => minimize(&ui, &video, true),
                             "max" => {
                                 mode = match mode {
-                                    Mode::Normal => match win::monitor_rects(ui.hwnd()) {
+                                    Mode::Normal => match win::monitor_rects(hnd(&ui)) {
                                         Some((_, work)) => {
                                             let prev = rect_of(&ui);
-                                            win::set_rect(ui.hwnd(), work);
+                                            win::set_rect(hnd(&ui), work);
                                             Mode::Maximized { prev }
                                         }
                                         None => Mode::Normal,
                                     },
                                     Mode::Maximized { prev } => {
-                                        win::set_rect(ui.hwnd(), prev);
+                                        win::set_rect(hnd(&ui), prev);
                                         Mode::Normal
                                     }
                                     fs => fs,
@@ -656,17 +720,17 @@ pub fn run() -> Result<(), String> {
                             "fs" => {
                                 mode = match mode {
                                     Mode::Fullscreen { prev, was_max } => {
-                                        win::set_rect(ui.hwnd(), was_max.map_or(prev, |_| prev));
+                                        win::set_rect(hnd(&ui), was_max.map_or(prev, |_| prev));
                                         match was_max {
                                             Some(before_max) => Mode::Maximized { prev: before_max },
                                             None => Mode::Normal,
                                         }
                                     }
-                                    other => match win::monitor_rects(ui.hwnd()) {
+                                    other => match win::monitor_rects(hnd(&ui)) {
                                         Some((monitor, _)) => {
                                             let prev = rect_of(&ui);
                                             let was_max = match other { Mode::Maximized { prev } => Some(prev), _ => None };
-                                            win::set_rect(ui.hwnd(), monitor);
+                                            win::set_rect(hnd(&ui), monitor);
                                             Mode::Fullscreen { prev, was_max }
                                         }
                                         None => other,
@@ -825,6 +889,9 @@ pub fn run() -> Result<(), String> {
                             let _ = w.join();
                         }
                     }
+                    // The render context must go before the mpv handle (libmpv rule).
+                    #[cfg(target_os = "macos")]
+                    renderer.stop();
                     unsafe { (m.destroy)(m.h) };
                     std::process::exit(0);
                 }
@@ -838,6 +905,12 @@ pub fn run() -> Result<(), String> {
                 WindowEvent::CloseRequested => close(&ui, &video, &m),
                 _ => {}
             },
+            // macOS delivers files (double click, "Open with", drop on the Dock icon) as Apple Events.
+            #[cfg(target_os = "macos")]
+            Event::Opened { urls } => {
+                let paths: Vec<PathBuf> = urls.iter().filter_map(|u| u.to_file_path().ok()).collect();
+                send(UserEvent::Open(paths));
+            }
             _ => {}
         }
         workers.retain(|w| !w.is_finished());
