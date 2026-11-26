@@ -3,7 +3,7 @@
   :root {
     --titlebar: 40px; /* must match TITLE_BAR in src/app.rs */
     --bg: #1b1a1e; --bar: #141317; --fg: #f4f2fa; --muted: rgba(244, 242, 250, .6);
-    --panel: rgba(17, 16, 20, .88); --menu: #212024; --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
+    --panel: rgba(17, 16, 20, .88); --menu: rgba(12, 11, 14, .86); /* see-through, but darker than the player buttons (.72) */ --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
     /* Logo colours washed out almost to white: a holographic hint, barely visible */
     --holo: linear-gradient(90deg, #ffe4f2, #fff3dd 25%, #e5fbea 50%, #e2f5ff 75%, #ece6ff);
     --ease-out: cubic-bezier(.22, 1, .36, 1);
@@ -179,7 +179,7 @@
   .menu.open { visibility: visible; opacity: 1; transform: none; filter: none;
     transition: opacity .18s var(--ease-out), transform .22s var(--ease-out), filter .18s, visibility 0s; }
   .menu .head { padding: 6px 10px 4px; font-size: 12px; color: var(--muted); }
-  .menu .item { display: flex; justify-content: space-between; gap: 24px; padding: 7px 10px; border-radius: 999px; cursor: pointer; position: relative; }
+  .menu .item { display: flex; justify-content: space-between; gap: 24px; padding: 7px 10px; border-radius: 6px; /* concentric with the menu: 12px radius - 6px padding */ cursor: pointer; position: relative; }
   .menu .item:hover { background: var(--hover); }
   .menu .item.disabled { opacity: .4; pointer-events: none; }
   .menu .item kbd, .menu .item .val { font: inherit; color: var(--muted); }
