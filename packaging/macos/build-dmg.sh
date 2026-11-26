@@ -37,7 +37,7 @@ dylibbundler -of -b -x "$C/Frameworks/libmpv.2.dylib" -d "$C/Frameworks" -p @loa
 # dylibbundler can add the same LC_RPATH several times; macOS 15's loader refuses such a library.
 for f in "$C"/Frameworks/*.dylib; do
   otool -l "$f" | awk '/cmd LC_RPATH/{getline; getline; print $2}' | sort | uniq -c | while read -r n path; do
-    for _ in $(seq 2 "$n"); do install_name_tool -delete_rpath "$path" "$f" 2>/dev/null; done
+    while [ "$n" -gt 1 ]; do install_name_tool -delete_rpath "$path" "$f"; n=$((n - 1)); done  # BSD seq counts down
   done
 done
 # Anything still pointing into Homebrew would only work on a Mac that has it.
