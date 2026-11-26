@@ -34,15 +34,21 @@ chmod u+w "$C/Frameworks/libmpv.2.dylib"
 install_name_tool -id @loader_path/libmpv.2.dylib "$C/Frameworks/libmpv.2.dylib"
 dylibbundler -of -b -x "$C/Frameworks/libmpv.2.dylib" -d "$C/Frameworks" -p @loader_path/ \
   -s "$(brew --prefix)/lib" >/dev/null
+# dylibbundler can add the same LC_RPATH several times; macOS 15's loader refuses such a library.
+for f in "$C"/Frameworks/*.dylib; do
+  otool -l "$f" | awk '/cmd LC_RPATH/{getline; getline; print $2}' | sort | uniq -c | while read -r n path; do
+    for _ in $(seq 2 "$n"); do install_name_tool -delete_rpath "$path" "$f" 2>/dev/null; done
+  done
+done
 # Anything still pointing into Homebrew would only work on a Mac that has it.
 if otool -L "$C"/Frameworks/*.dylib | grep -E "$(brew --prefix)|/usr/local/(opt|Cellar)"; then
   echo "error: Homebrew paths left in bundled libraries" >&2
   exit 1
 fi
 
-# What libmpv now links to, for the CI log.
-otool -L "$C/Frameworks/libmpv.2.dylib" | head -40
-ls "$C/Frameworks" | wc -l
+# For the CI log: libmpv's rpaths (each once) and how many libraries came along.
+otool -l "$C/Frameworks/libmpv.2.dylib" | awk '/cmd LC_RPATH/{getline; getline; print "rpath", $2}'
+echo "bundled libraries: $(ls "$C/Frameworks" | wc -l)"
 
 # Ad-hoc signature: required for arm64 code to run at all. Not notarized (no Apple Developer account).
 codesign --force --sign - "$C"/Frameworks/*.dylib
