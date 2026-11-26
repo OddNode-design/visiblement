@@ -1202,7 +1202,7 @@ function sendGlass() {
   const open = glassPanels.flatMap(([sel, isOpen]) => [...document.querySelectorAll(sel)].filter(el => el.offsetWidth > 0 && isOpen(el) && +getComputedStyle(el).opacity >= .5))
     .map(el => ({ r: el.getBoundingClientRect(), round: parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0 }))
     .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height).slice(0, 5);
-  const f = v => v.toFixed(4), opts = [`radius=${(28 * dpr).toFixed(1)}`];
+  const f = v => v.toFixed(4), opts = [`radius=${(80 * dpr).toFixed(1)}`]; // heavy: only shapes and colours show through
   "abcde".split("").forEach((k, i) => {
     const o = open[i], r = o?.r;
     opts.push(`${k}x=${f(r ? (r.left - X) / W : 0)}`, `${k}y=${f(r ? (r.top - Y) / H : 0)}`,
