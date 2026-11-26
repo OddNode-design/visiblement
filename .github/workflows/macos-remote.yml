@@ -49,12 +49,25 @@ jobs:
         env:
           VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}
         run: |
+          # Without "Screen Recording" the sharing service sends a black screen (only the cursor shows).
+          # GitHub's Macs run without System Integrity Protection, so the permission can be written into the
+          # system's TCC database: screen capture, plus control of the mouse and keyboard.
+          db="/Library/Application Support/com.apple.TCC/TCC.db"; now=$(date +%s)
+          for client in com.apple.screensharing.agent com.apple.RemoteDesktopAgent; do
+            for service in kTCCServiceScreenCapture kTCCServicePostEvent kTCCServiceAccessibility; do
+              sudo sqlite3 "$db" "INSERT OR REPLACE INTO access VALUES('$service','$client',0,2,4,1,NULL,NULL,0,'UNUSED',NULL,0,$now,NULL,NULL,'UNUSED',0);" \
+                || echo "::warning::could not grant $service to $client"
+            done
+          done
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
             -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$VNC_PASSWORD" -restart -agent -console >/dev/null
           # Wait for the VNC server.
           for i in $(seq 1 30); do nc -z localhost 5900 && break; sleep 2; done
           nc -z localhost 5900
+          # The sharing service reads its permissions when it starts.
+          sudo launchctl kickstart -k system/com.apple.screensharing 2>/dev/null || true
+          for i in $(seq 1 30); do nc -z localhost 5900 && break; sleep 2; done
 
       - name: Browser link, kept up until the end
         env:
