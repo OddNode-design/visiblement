@@ -272,7 +272,7 @@
   /* Navigation: plain items centred in the title bar, part of it (no container); menus open on hover */
   .nav { position: absolute; left: 50%; top: 0; bottom: 0; translate: -50% 0; display: flex; align-items: center; gap: 6px; }
   .nav-item { position: relative; }
-  .nav-btn { all: unset; height: 28px; padding: 0 12px; border-radius: 999px; display: flex; align-items: center; gap: 6px;
+  .nav-btn { all: unset; box-sizing: border-box; height: 32px; padding: 0 14px; border-radius: 999px; display: flex; align-items: center; justify-content: center; gap: 6px; line-height: 1; /* 32 px tall: an easier target */
     font-size: 13px; font-weight: 500; color: rgba(244, 242, 250, .86); cursor: pointer; transition: background .15s, color .15s; }
   .nav-btn:hover, .nav-item.open .nav-btn { background: rgba(255, 255, 255, .06); color: var(--fg); }
   .nav-btn .chev { width: 13px; height: 13px; margin-right: -4px; opacity: .8; /* the glyph sits mid-box: without this the right side looks 4 px wider than the left */ transition: rotate .4s var(--ease-out); }
@@ -431,7 +431,7 @@
     opacity: 0; visibility: hidden; transform: translateY(-4px); transition: opacity .12s, transform .12s, visibility 0s .12s; }
   .titlebar.compact.menu-open .nav { opacity: 1; visibility: visible; transform: none;
     transition: opacity .18s var(--ease-out), transform .22s var(--ease-out), visibility 0s; }
-  .titlebar.compact .nav-btn { box-sizing: border-box; width: 100%; height: 28px; padding: 0 10px; border-radius: 6px; /* full-width rectangle, concentric with the panel (10px - 4px) */ justify-content: space-between; gap: 14px; }
+  .titlebar.compact .nav-btn { box-sizing: border-box; width: 100%; height: 32px; padding: 0 10px; border-radius: 6px; /* full-width rectangle, concentric with the panel (10px - 4px) */ justify-content: space-between; gap: 14px; }
   .titlebar.compact .nav-btn .chev, .titlebar.compact .nav-item.open .chev { rotate: -90deg; } /* points to the side menu */
   .titlebar.compact .dropdown { top: -6px; left: calc(100% + 10px); transform: translateX(-4px) scale(.98); transform-origin: top left;
     min-width: 0; width: min(320px, calc(100vw - 240px)); } /* stays inside a narrow window */
