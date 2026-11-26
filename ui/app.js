@@ -4,6 +4,8 @@ const win = $("win"), stage = $("stage");
 // macOS: shortcuts use Cmd where Windows uses Ctrl; the root gets a "mac" class for platform styling.
 const IS_MAC = /Mac/.test(navigator.platform);
 if (IS_MAC) document.documentElement.classList.add("mac");
+// The shortcut labels in the menus, the Mac way: ⌘ for Ctrl, ⌥ for Alt.
+if (IS_MAC) document.querySelectorAll("kbd").forEach(k => k.textContent = k.textContent.replace(/Ctrl\+/g, "⌘").replace(/Alt\+/g, "⌥"));
 
 // --- Bridge to the Rust side (src/app.rs)
 const send = msg => window.ipc?.postMessage(JSON.stringify(msg)); // no-op outside the app (browser preview)
@@ -599,7 +601,7 @@ addEventListener("keydown", ev => {
   else if (c && k.toLowerCase() === "e") { ev.preventDefault(); actions.export(); }
   else if (c && k.toLowerCase() === "m") { ev.preventDefault(); actions.toggleMask(); }
   else if (c && k.toLowerCase() === "i") { ev.preventDefault(); actions.invertMask(); }
-  else if (ev.altKey && k.toLowerCase() === "x") clearSel();
+  else if (ev.altKey && ev.code === "KeyX") clearSel(); // by key position: Option+X types "≈" on a Mac
   else if (c) return;
   else if (k === "m") cmd("cycle", "mute");
   else if (k === "f") $("fs").onclick();

@@ -2,7 +2,7 @@
 
 <h1 align="center">Visiblement</h1>
 
-<p align="center">Lecteur vidéo pour Windows, construit sur mpv. Il lit à peu près tous les fichiers. Visiblement.</p>
+<p align="center">Lecteur vidéo pour Windows et macOS, construit sur mpv. Il lit à peu près tous les fichiers. Visiblement.</p>
 
 <p align="center">Vous y glissez une vidéo, une image ou un son et il le lit avec le décodage de votre carte graphique.</p>
 
@@ -27,12 +27,29 @@ Pendant la lecture d'un fichier audio, la mascotte remplace ses yeux par une for
 
 ## Installation
 
+### Windows
+
 Dans les [Releases](../../releases/latest), prenez l'un des deux fichiers :
 
 - `Visiblement-x.y.z-x64.msi` installe l'app pour votre compte, sans droits administrateur. Il ajoute un raccourci au menu Démarrer et « Ouvrir avec Visiblement » sur les vidéos, les images et l'audio. Une nouvelle version s'installe par-dessus l'ancienne.
 - `Visiblement-windows-x64.zip` contient la version portable. Dézippez le dossier où vous voulez et lancez `visiblement.exe`.
 
 Windows 10 et 11 embarquent WebView2, qui affiche l'interface. Vous n'avez rien d'autre à installer.
+
+### macOS
+
+Prenez `Visiblement-x.y.z-macos-arm64.dmg`. Il demande un Mac à puce Apple (M1 ou plus récent) sous macOS 15 Sequoia ou plus récent. Ouvrez le DMG et glissez Visiblement dans le dossier Applications.
+
+L'app n'est pas signée par Apple : macOS la bloque au premier lancement.
+
+1. Double-cliquez Visiblement dans Applications. macOS affiche qu'il ne peut pas vérifier l'app : cliquez Terminé.
+2. Ouvrez Réglages Système > Confidentialité et sécurité. En bas, à côté de « Visiblement a été bloqué », cliquez Ouvrir quand même et confirmez.
+
+Les lancements suivants se font normalement. Dans le Terminal, `xattr -dr com.apple.quarantine /Applications/Visiblement.app` fait la même chose.
+
+Sur Mac, les périphériques de capture (webcam, NDI) et la mise à jour automatique ne sont pas encore là : pour une nouvelle version, téléchargez le nouveau DMG.
+
+### Mises à jour
 
 Au lancement, Visiblement interroge GitHub et vous propose la nouvelle version quand elle existe. Si vous cochez « Ne plus demander », le petit bouton en bas à droite de l'écran d'accueil vous permet encore de vérifier.
 
@@ -91,6 +108,8 @@ wix build installer\visiblement.wxs -arch x64 -d Version=1.0.15 -d BinDir=target
 ```
 
 Remplacez `1.0.15` par la version inscrite dans `Cargo.toml`.
+
+Le DMG pour macOS se fabrique sur un Mac avec `bash packaging/macos/build-dmg.sh`, après `brew install mpv dylibbundler`. GitHub Actions le construit à chaque tag de version (`.github/workflows/macos.yml`).
 
 ## Crédits et licences
 
