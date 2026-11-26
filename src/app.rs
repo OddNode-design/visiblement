@@ -393,6 +393,12 @@ pub fn run() -> Result<(), String> {
     let (_lib, api) = load_mpv(&dir)?;
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    // First size: 1280 x 720 picture, but never more than 90% of a small screen (it would spill off it).
+    let (start_w, start_h) = event_loop.primary_monitor().map_or((1280.0, 720.0), |mon| {
+        let s = mon.size().to_logical::<f64>(mon.scale_factor());
+        let k = (s.width * 0.9 / 1280.0).min((s.height * 0.9 - TITLE_BAR) / 720.0).min(1.0);
+        ((1280.0 * k).round().max(MIN_W), (720.0 * k).round().max(MIN_H - TITLE_BAR))
+    });
     let _ = PROXY.set(Mutex::new(event_loop.create_proxy()));
     if let Some(pipe) = pipe {
         crate::single::serve(pipe, |paths| send(UserEvent::Open(paths)));
@@ -408,7 +414,7 @@ pub fn run() -> Result<(), String> {
         .with_title(APP)
         .with_decorations(false)
         .with_window_icon(icon.clone())
-        .with_inner_size(LogicalSize::new(1280.0, 720.0));
+        .with_inner_size(LogicalSize::new(start_w, start_h));
     #[cfg(windows)]
     let video = video.with_undecorated_shadow(false);
     let video = video.build(&event_loop).map_err(|e| e.to_string())?;
@@ -419,7 +425,7 @@ pub fn run() -> Result<(), String> {
         .with_transparent(true)
         .with_window_icon(icon)
         .with_visible(false) // shown once its hidden frame is gone, so it never paints one
-        .with_inner_size(LogicalSize::new(1280.0, 720.0 + TITLE_BAR))
+        .with_inner_size(LogicalSize::new(start_w, start_h + TITLE_BAR))
         .with_min_inner_size(LogicalSize::new(MIN_W, MIN_H));
     #[cfg(windows)]
     let ui = ui.with_undecorated_shadow(false).with_owner_window(video.hwnd() as _).with_skip_taskbar(true);
