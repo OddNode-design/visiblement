@@ -25,7 +25,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::ptr::null_mut;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock, PoisonError, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -268,6 +268,10 @@ unsafe extern "C" fn get_proc_address(_ctx: *mut c_void, name: *const c_char) ->
 static WAKE: (Mutex<bool>, Condvar) = (Mutex::new(false), Condvar::new());
 static SIZE: AtomicU64 = AtomicU64::new(0);
 static STOP: AtomicBool = AtomicBool::new(false);
+/// The NSOpenGLContext and its CGL context, once the render thread has them (0 before).
+/// `[NSOpenGLContext update]` must run on the main thread (AppKit traps otherwise), so resizes do it here.
+static GL_CTX: AtomicUsize = AtomicUsize::new(0);
+static GL_CGL: AtomicUsize = AtomicUsize::new(0);
 
 fn wake() {
     *WAKE.0.lock().unwrap_or_else(PoisonError::into_inner) = true;
@@ -280,10 +284,21 @@ unsafe extern "C" fn on_update(_ctx: *mut c_void) {
 }
 
 /// Size of the video window in physical (backing) pixels; the render thread picks it up.
+/// Main thread only (it updates the GL drawable).
 pub fn set_render_size(w: u32, h: u32) {
     if SIZE.swap(u64::from(w) << 32 | u64::from(h), Ordering::Relaxed)
         != u64::from(w) << 32 | u64::from(h)
     {
+        let (ctx, cgl) = (GL_CTX.load(Ordering::Acquire), GL_CGL.load(Ordering::Acquire));
+        if ctx != 0 && cgl != 0 {
+            // SAFETY: both stay valid while the render thread runs (it clears them before freeing);
+            // the CGL lock keeps the render thread out while the drawable changes.
+            unsafe {
+                CGLLockContext(cgl as *mut c_void);
+                let _: () = msg_send![&*(ctx as *const AnyObject), update];
+                CGLUnlockContext(cgl as *mut c_void);
+            }
+        }
         wake();
     }
 }
@@ -385,6 +400,8 @@ fn render_loop(
         let _: () = msg_send![&*ctx, makeCurrentContext];
         let cgl = CGLGetCurrentContext();
         CGLSetParameter(cgl, CGL_SWAP_INTERVAL, &1); // vsync
+        GL_CTX.store(Retained::as_ptr(&ctx) as usize, Ordering::Release);
+        GL_CGL.store(cgl as usize, Ordering::Release);
         let mut init = GlInit {
             get_proc_address,
             ctx: null_mut(),
@@ -409,7 +426,6 @@ fn render_loop(
         (api.set_update_callback)(rc, on_update, null_mut());
         let _ = ready.send(Ok(()));
 
-        let mut last = 0u64;
         wake(); // a first draw: the idle background
         loop {
             {
@@ -429,10 +445,6 @@ fn render_loop(
                 continue;
             }
             CGLLockContext(cgl);
-            if size != last {
-                let _: () = msg_send![&*ctx, update]; // the drawable changed size
-                last = size;
-            }
             (api.update)(rc);
             // Idle screen and audio files: the logo tile colour (#1b1a1e); a video covers it.
             glClearColor(27.0 / 255.0, 26.0 / 255.0, 30.0 / 255.0, 1.0);
@@ -460,6 +472,9 @@ fn render_loop(
             (api.report_swap)(rc);
             CGLUnlockContext(cgl);
         }
+        // The main thread must not update a context about to go away.
+        GL_CTX.store(0, Ordering::Release);
+        GL_CGL.store(0, Ordering::Release);
         CGLLockContext(cgl);
         (api.free)(rc);
         CGLUnlockContext(cgl);
