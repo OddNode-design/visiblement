@@ -32,7 +32,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release download --repo "$GITHUB_REPOSITORY" --pattern '*macos-arm64.dmg' --dir "$RUNNER_TEMP"
+          # The newest release that has a DMG (a new tag gets its DMG a few minutes after the release).
+          for tag in $(gh release list --repo "$GITHUB_REPOSITORY" --limit 10 --json tagName --jq '.[].tagName'); do
+            gh release download "$tag" --repo "$GITHUB_REPOSITORY" --pattern '*macos-arm64.dmg' --dir "$RUNNER_TEMP" 2>/dev/null && { echo "DMG from $tag"; break; }
+          done
           hdiutil attach "$RUNNER_TEMP"/*.dmg -mountpoint /Volumes/Visiblement -nobrowse
           cp -R /Volumes/Visiblement/Visiblement.app /Applications/
           hdiutil detach /Volumes/Visiblement
