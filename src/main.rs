@@ -71,6 +71,7 @@ struct Mpv {
     get_property: unsafe extern "C" fn(Handle, *const c_char) -> *mut c_char,
     observe: unsafe extern "C" fn(Handle, u64, *const c_char, c_int) -> c_int,
     command: unsafe extern "C" fn(Handle, *const *const c_char) -> c_int,
+    request_log: unsafe extern "C" fn(Handle, *const c_char) -> c_int,
     free: unsafe extern "C" fn(*mut c_void),
 }
 
@@ -581,6 +582,7 @@ fn load_mpv(dir: &Path) -> Result<(Library, Mpv), String> {
         get_property: sym!("mpv_get_property_string"),
         observe: sym!("mpv_observe_property"),
         command: sym!("mpv_command"),
+        request_log: sym!("mpv_request_log_messages"),
         free: sym!("mpv_free"),
     };
     Ok((lib, m))

@@ -472,9 +472,13 @@ stage.addEventListener("contextmenu", ev => { ev.preventDefault(); openAt($("men
 addEventListener("pointerdown", ev => { if (!menus.some(m => m.contains(ev.target)) && !ev.target.closest("#subsBtn, #setBtn")) closeAll(); });
 
 let toastTimer;
+// A failed job adds why on the next lines (mpv / FFmpeg errors): shown smaller, and left up long enough to read.
 function toast(msg) {
-  $("toast").textContent = msg; $("toast").classList.add("show");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => $("toast").classList.remove("show"), 1800);
+  const [head, ...why] = msg.split("\n"), el = $("toast");
+  el.textContent = head; el.classList.toggle("long", why.length > 0);
+  if (why.length) el.append(Object.assign(document.createElement("small"), { textContent: why.join("\n") }));
+  el.classList.add("show");
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("show"), why.length ? 9000 : 1800);
 }
 // Export / conversion running (Rust): a pill with its progress and a stop button.
 vb.job = (label, pct) => {

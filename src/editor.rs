@@ -2,7 +2,9 @@
 //! running in encoding mode, so no external FFmpeg is needed.
 
 use crate::{EVENT_END_FILE, EVENT_SHUTDOWN, Mpv};
+use std::ffi::{CStr, c_char};
 use std::path::Path;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
@@ -65,7 +67,9 @@ pub fn preset(id: &str, alpha: bool, audio_format: Option<&str>) -> Option<(&'st
     let pcm = pcm(audio_format);
     let mut v: Vec<(&'static str, String)> = Vec::new();
     let mut set = |k: &'static str, val: &str| v.push((k, val.to_string()));
-    let fmt = |pix: &str| format!("lavfi=[format={pix}]");
+    // Odd sizes (a 1780x2287 PNG sequence) make 4:2:0 / 4:2:2 encoders refuse to open: one empty
+    // row or column brings them to even. A no-op on even sizes.
+    let fmt = |pix: &str| format!("lavfi=[pad=ceil(iw/2)*2:ceil(ih/2)*2:color=black@0,format={pix}]");
     let ext = match codec {
         "h264" | "h265" => {
             let crf = match (codec, kind) {
@@ -148,6 +152,10 @@ pub fn preset(id: &str, alpha: bool, audio_format: Option<&str>) -> Option<(&'st
     Some((ext, v))
 }
 
+const EVENT_LOG_MESSAGE: i32 = 2;
+/// The last encode's error lines from mpv / FFmpeg (empty when it went fine).
+static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
+
 /// H.265 encoders, tried in this order until one works on this PC.
 pub const HEVC_ENCODERS: &[&str] = &["hevc_nvenc", "hevc_amf", "hevc_qsv"];
 
@@ -182,6 +190,7 @@ fn clock(t: f64) -> String {
 /// Blocks until done; true when the output file was written.
 pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, settings: &[(&str, String)], progress: impl Fn(f64)) -> bool {
     // SAFETY: a fresh, independent handle; destroyed below on every path.
+    LAST_ERROR.lock().unwrap().clear();
     let h = unsafe { (m.create)() };
     if h.is_null() {
         return false;
@@ -195,6 +204,9 @@ pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, se
         enc.option("end", &b.to_string());
     }
     enc.option("hr-seek", "yes");
+    // Errors from mpv / FFmpeg, kept to tell the user why a conversion failed.
+    unsafe { (m.request_log)(h, c"error".as_ptr()) };
+    let mut errors: Vec<String> = Vec::new();
     if let Some(log) = std::env::var_os("VISIBLEMENT_LOG") {
         enc.option("log-file", &format!("{}.export.txt", log.to_string_lossy()));
     }
@@ -227,11 +239,21 @@ pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, se
         match ev.id {
             EVENT_SHUTDOWN | EVENT_END_FILE => break,
             _ if CANCEL.load(Ordering::Relaxed) => break,
+            EVENT_LOG_MESSAGE => {
+                // SAFETY: data points to an mpv_event_log_message { prefix, level, text, log_level }.
+                let msg = unsafe { &*(ev.data as *const [*const c_char; 3]) };
+                let text = |p: *const c_char| unsafe { CStr::from_ptr(p) }.to_string_lossy().trim().to_string();
+                let line = format!("{}: {}", text(msg[0]), text(msg[2]));
+                if !errors.contains(&line) {
+                    errors.push(line);
+                }
+            }
             _ => progress(enc.num("percent-pos")),
         }
     }
     // Destroying flushes and closes the output file.
     unsafe { (m.destroy)(h) };
+    *LAST_ERROR.lock().unwrap() = errors.iter().rev().take(3).rev().cloned().collect::<Vec<_>>().join("\n");
     if CANCEL.load(Ordering::Relaxed) {
         let _ = std::fs::remove_file(out); // a stopped encode leaves no half file behind
         return false;
@@ -250,7 +272,9 @@ fn job(label: &str, pct: f64) {
 /// The result of an export / conversion: the pill goes, a toast says how it ended.
 fn job_done(m: &Mpv, ok: bool, done: String, failed: &str, cancelled: &str) {
     crate::app::eval_js("window.vb && vb.jobDone()");
-    m.toast(if CANCEL.swap(false, Ordering::Relaxed) { cancelled } else if ok { &done } else { failed });
+    let why = LAST_ERROR.lock().unwrap().clone();
+    let failed = if why.is_empty() { failed.to_string() } else { format!("{failed}\n{why}") };
+    m.toast(if CANCEL.swap(false, Ordering::Relaxed) { cancelled } else if ok { &done } else { &failed });
 }
 
 /// Asks where to save, then encodes in the background with a progress toast in the player.
@@ -395,10 +419,10 @@ mod tests {
         }
         let (ext, c) = preset("prores:4444", true, Some("s24")).unwrap();
         assert_eq!(ext, "mov");
-        assert!(c.contains(&("ovcopts", "profile=4".into())) && c.contains(&("vf", "lavfi=[format=yuva444p10le]".into())));
+        assert!(c.contains(&("ovcopts", "profile=4".into())) && c.contains(&("vf", "lavfi=[pad=ceil(iw/2)*2:ceil(ih/2)*2:color=black@0,format=yuva444p10le]".into())));
         assert!(c.contains(&("oac", "pcm_s24le".into())));
-        assert!(preset("prores:hq", true, None).unwrap().1.contains(&("vf", "lavfi=[format=yuv422p10le]".into())));
-        assert!(preset("prores:xq", false, None).unwrap().1.contains(&("vf", "lavfi=[format=yuv444p10le]".into())));
+        assert!(preset("prores:hq", true, None).unwrap().1.contains(&("vf", "lavfi=[pad=ceil(iw/2)*2:ceil(ih/2)*2:color=black@0,format=yuv422p10le]".into())));
+        assert!(preset("prores:xq", false, None).unwrap().1.contains(&("vf", "lavfi=[pad=ceil(iw/2)*2:ceil(ih/2)*2:color=black@0,format=yuv444p10le]".into())));
         assert!(preset("dnxhr:hqx", false, None).unwrap().1.contains(&("ovcopts", "profile=dnxhr_hqx".into())));
         assert_eq!(preset("wav:32f", false, None).unwrap().1, vec![("oac", "pcm_f32le".to_string()), ("vid", "no".to_string())]);
         assert!(preset("prores:nope", false, None).is_none());
@@ -408,5 +432,32 @@ mod tests {
     #[test]
     fn clock_format() {
         assert_eq!(clock(83.5), "1:23.500");
+    }
+
+    /// Odd-sized frames (1780x2287) used to fail in H.264; a broken encoder now says why.
+    /// Needs target/release/libmpv-2.dll: cargo test --release -- --ignored odd_size
+    #[test]
+    #[ignore]
+    fn odd_size_sequence_encodes_and_failures_say_why() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release");
+        let (_lib, m) = crate::load_mpv(&dir).expect("libmpv-2.dll in target/release");
+        let tmp = std::env::temp_dir().join("visiblement-odd-test");
+        let _ = std::fs::create_dir_all(&tmp);
+        let png = tmp.join("odd_0001.png");
+        let enc = png::Encoder::new(std::fs::File::create(&png).unwrap(), 31, 17); // odd both ways
+        let mut w = enc.write_header().unwrap();
+        w.write_image_data(&[128u8; 31 * 17]).unwrap();
+        drop(w);
+        let src = format!("mf://{}", tmp.join("odd_*.png").to_string_lossy());
+        let out = tmp.join("odd.mp4");
+        let (_, mut settings) = preset("h264:std", false, None).unwrap();
+        sequence_settings("h264:std", "25", &mut settings);
+        assert!(encode_any(&m, &src, &out, &settings, |_| {}), "{}", LAST_ERROR.lock().unwrap());
+        let bad: Vec<(&str, String)> = vec![("ovc", "no_such_encoder".into())];
+        assert!(!encode(&m, &src, &tmp.join("bad.mp4"), None, None, &bad, |_| {}));
+        let why = LAST_ERROR.lock().unwrap().clone();
+        assert!(!why.is_empty(), "no reason captured");
+        println!("reason: {why}");
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

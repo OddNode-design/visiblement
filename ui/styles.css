@@ -319,7 +319,7 @@
   .cam-list button:hover { background: rgba(255, 255, 255, .1); }
   .cam-list .ico { width: 18px; height: 18px; color: var(--muted); }
 
-  .modal.info { width: min(580px, calc(100vw - 32px)); text-align: left; padding: 20px; }
+  .modal.info { width: min(760px, calc(100vw - 32px)); text-align: left; padding: 20px; }
   .info-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; min-width: 0; }
   .info-head h2 { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .info-head span { color: var(--muted); font-size: 12px; white-space: nowrap; }
@@ -331,7 +331,7 @@
   .tabs .pill { position: absolute; top: 3px; bottom: 3px; left: 3px; border-radius: 999px; background: var(--fg);
     transition: translate .28s var(--ease-out), width .28s var(--ease-out); }
   /* Fixed height: switching tabs never resizes the panel; the new tab fades in instead */
-  .info-body { height: min(340px, 55vh); overflow: auto; margin-bottom: 16px; padding-right: 6px; scrollbar-gutter: stable; }
+  .info-body { height: clamp(120px, calc(100vh - var(--titlebar) - 150px), 560px); overflow: auto; margin-bottom: 16px; padding-right: 6px; scrollbar-gutter: stable; }
   .info-body.swap { animation: tab-in .26s var(--ease-out); }
   @keyframes tab-in { from { opacity: 0; transform: translateY(4px); } }
   /* Thin, rounded scrollbar without arrows */
@@ -362,16 +362,17 @@
   .stage.v360:active { cursor: grabbing; }
 
   /* Convertir: codec list | settings, like a render queue panel */
-  .modal.conv { width: min(640px, calc(100vw - 32px)); max-height: calc(100vh - var(--titlebar) - 24px);
+  /* Grows with the window, shrinks into small ones */
+  .modal.conv { width: min(860px, calc(100vw - 32px)); height: min(640px, calc(100vh - var(--titlebar) - 24px));
     padding: 0; display: flex; flex-direction: column; overflow: hidden; text-align: left; }
-  .conv-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .conv-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
   .conv-top h2 { margin: 0; font-size: 15px; font-weight: 600; }
-  .conv-body { display: grid; grid-template-columns: 190px 1fr; min-height: 0; flex: 1; }
+  .conv-body { display: grid; grid-template-columns: clamp(150px, 26%, 220px) 1fr; min-height: 0; flex: 1; }
   .conv-codecs { overflow-y: auto; padding: 8px 6px; border-right: 1px solid var(--line); scrollbar-width: thin; }
   .conv-codecs h3 { margin: 10px 10px 4px; font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
   .conv-codecs h3:first-child { margin-top: 2px; }
   .conv-codecs button { all: unset; box-sizing: border-box; width: 100%; display: flex; justify-content: space-between; align-items: baseline;
-    padding: 6px 12px; border-radius: 999px; font-size: 13px; cursor: pointer; }
+    padding: 6px 12px; border-radius: 6px; font-size: 13px; cursor: pointer; }
   .conv-codecs button + button { margin-top: 3px; } /* a hovered row never touches the selected one */
   .conv-codecs button small { font: 11px/1 Roboto, sans-serif; color: var(--muted); }
   .conv-codecs button:hover { background: var(--hover); }
@@ -395,12 +396,12 @@
   .conv-out { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conv-foot .actions { flex: none; width: 150px; }
   /* Close cross (Lucide "x") at the right end of the Convertir and Infos headers */
-  .x-close { all: unset; flex: none; align-self: center; display: grid; place-items: center; width: 28px; height: 28px;
+  .x-close { all: unset; flex: none; align-self: center; display: grid; place-items: center; width: 34px; height: 34px;
     border-radius: 8px; color: var(--muted); cursor: pointer; }
   .x-close:hover { background: var(--hover); color: var(--fg); }
-  .x-close .ico { width: 16px; height: 16px; }
-  .conv-top .src-tabs, .info-head .x-close { margin-left: auto; }
-  .x-close { margin-right: -6px; } /* the glyph, not its hover box, lines up with the content edge */
+  .x-close .ico { width: 20px; height: 20px; }
+  .info-head .x-close { margin-left: auto; }
+  .x-close { margin-right: -7px; } /* the glyph, not its hover box, lines up with the content edge */
   .conv-field[hidden] { display: none; }
   .conv-src { display: flex; align-items: center; gap: 10px; min-width: 0; }
   .conv-src .pick { all: unset; flex: none; padding: 4px 10px; border-radius: 999px; font-size: 12.5px; cursor: pointer; background: rgba(255, 255, 255, .08); }
@@ -492,7 +493,7 @@
   /* Rows next to each other: a little air, so a hovered row never touches the selected one */
   .menu .item + .item, .dd + .dd, .cam-list button + button { margin-top: 2px; }
 
-  .tabs.src-tabs { margin: 0; }
+  .tabs.src-tabs { margin: 0 0 0 auto; } /* pushed right, next to the cross */
   .tabs.src-tabs button { flex: none; padding: 0 14px; }
 
   .bar.compact #listBtn, .bar.compact #subsBtn, .bar.compact #alphaBtn { display: none; }
@@ -516,3 +517,20 @@
 
   /* Home screen: messages and the progress pill sit above the "Glisse une vidéo ici…" line, never on it */
   .stage.idle .toast, .stage.idle .job { bottom: calc(14% + 36px); }
+  /* Squeezed window: same two columns, nothing wraps or scrolls sideways */
+  .conv-top h2 { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-top .src-tabs { flex: none; }
+  .conv-codecs button { gap: 8px; white-space: nowrap; }
+  .conv-codecs button span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .conv-detail { overflow-x: hidden; }
+  .conv-field { grid-template-columns: 64px minmax(0, 1fr); }
+  .conv-codecs, .conv-detail { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .14) transparent; }
+  @media (max-width: 480px) {
+    .tabs.src-tabs button { padding: 0 10px; }
+    .conv-codecs button small { display: none; } /* the extension is already in the output name below */
+  }
+  .conv-detail .seg { border-radius: 10px; } /* still neat when its choices wrap onto several lines */
+  .conv-detail .seg button { border-radius: 8px; }
+  .conv-foot .actions button { border-radius: 8px; } /* rectangular, like the codec list */
+  .toast.long { border-radius: 12px; max-width: min(560px, calc(100vw - 32px)); white-space: normal; text-align: left; }
+  .toast.long small { display: block; margin-top: 4px; font: 11.5px/1.45 Roboto, sans-serif; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }

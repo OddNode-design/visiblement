@@ -163,6 +163,10 @@ fn sync_video(ui: &Window, video: &Window, m: Option<&Mpv>, mode: &Mode) {
     }
 }
 
+/// Smallest window (logical px, title bar included): below it the bar and Convertir get cramped.
+const MIN_W: f64 = 640.0;
+const MIN_H: f64 = 420.0;
+
 /// New file: fit the window to the picture (90% of the screen at most), keeping its centre.
 fn fit_to_video(ui: &Window, mode: &Mode, w: f64, h: f64) {
     if !matches!(mode, Mode::Normal) || w <= 0.0 || h <= 0.0 {
@@ -173,7 +177,7 @@ fn fit_to_video(ui: &Window, mode: &Mode, w: f64, h: f64) {
     let (mw, mh) = (mon.size().width as f64 * 0.9, mon.size().height as f64 * 0.9);
     let bar = TITLE_BAR * scale;
     let k = (mw / w).min((mh - bar) / h).min(1.0);
-    let (cw, ch) = ((w * k).round().max(480.0), (h * k + bar).round().max(300.0));
+    let (cw, ch) = ((w * k).round().max(MIN_W * scale), (h * k + bar).round().max(MIN_H * scale));
     let (Ok(pos), size) = (ui.outer_position(), ui.outer_size()) else { return };
     let (cx, cy) = (pos.x as f64 + size.width as f64 / 2.0, pos.y as f64 + size.height as f64 / 2.0);
     let (mx, my) = (mon.position().x as f64, mon.position().y as f64);
@@ -364,7 +368,7 @@ pub fn run() -> Result<(), String> {
         .with_skip_taskbar(true)
         .with_visible(false) // shown once its hidden frame is gone, so it never paints one
         .with_inner_size(LogicalSize::new(1280.0, 720.0 + TITLE_BAR))
-        .with_min_inner_size(LogicalSize::new(480.0, 300.0))
+        .with_min_inner_size(LogicalSize::new(MIN_W, MIN_H))
         .build(&event_loop)
         .map_err(|e| e.to_string())?;
     if let Some(mon) = ui.current_monitor() {
@@ -609,7 +613,7 @@ pub fn run() -> Result<(), String> {
                                 let Some((x, y)) = win::cursor() else { return };
                                 last_cursor = (x, y);
                                 if let Some(g) = &grab {
-                                    let min = (480.0 * ui.scale_factor(), (300.0 + TITLE_BAR) * ui.scale_factor());
+                                    let min = (MIN_W * ui.scale_factor(), MIN_H * ui.scale_factor());
                                     let (px, py, w, h) = g.apply(x, y, min);
                                     let r = |v: f64| v.round() as i32;
                                     win::move_pair(ui.hwnd(), video.hwnd(), (r(px), r(py), r(w), r(h)));
