@@ -2,7 +2,7 @@
   @font-face { font-family: Roboto; src: url(fonts/Roboto.ttf) format("truetype"); font-weight: 100 900; font-stretch: 75% 100%; font-display: block; }
   :root {
     --titlebar: 40px; /* must match TITLE_BAR in src/app.rs */
-    --bg: #1b1a1e; --bar: #141317; --fg: #f4f2fa; --muted: rgba(244, 242, 250, .6);
+    --bg: #1b1a1e; --bar: #0b0c10; /* window frame (title bar): close to the menus (#090A0E) */ --fg: #f4f2fa; --muted: rgba(244, 242, 250, .6);
     --panel: rgba(17, 16, 20, .88); --menu: rgba(8, 7, 10, .9); /* see-through, but darker than the player buttons (.72) */ --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
     /* Logo colours washed out almost to white: a holographic hint, barely visible */
     --holo: linear-gradient(90deg, #ffe4f2, #fff3dd 25%, #e5fbea 50%, #e2f5ff 75%, #ece6ff);
@@ -145,7 +145,7 @@
   .bar { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
   /* Two translucent pills (left: transport, right: options), like YouTube, instead of a dark gradient */
   .bar .group { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: 999px;
-    background: rgba(14, 13, 17, .72); backdrop-filter: blur(18px) saturate(1.3);
+    background: rgba(9, 10, 14, .92); /* like the menus, a little lighter in opacity */
     box-shadow: 0 4px 18px rgba(0, 0, 0, .18); }
   .bar button { all: unset; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 999px; cursor: pointer; color: var(--fg); }
   .bar button:hover, .bar button.on { background: var(--hover); }
