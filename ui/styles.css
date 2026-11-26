@@ -533,13 +533,9 @@
   .toast.long { border-radius: 12px; max-width: min(560px, calc(100vw - 32px)); white-space: normal; text-align: left; }
   .toast.long small { display: block; margin-top: 4px; font: 11.5px/1.45 Roboto, sans-serif; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
   /* Context menus (right click, settings, subtitles, nav menus, burger panel), dialogs and messages:
-     frosted glass, blur only. The blur reaches the page; over the video mpv blurs it (src/blur.glsl). */
+     a dark, nearly opaque tint and a fine light edge. No blur: CSS can't reach the video (mpv draws it
+     in its own window below the page), and blurring it from mpv never stayed in step with the panels. */
   .menu, .dropdown, .titlebar.compact .nav, .modal, .toast, .job, .notice {
-    background: rgba(12, 11, 14, .86); backdrop-filter: blur(64px) saturate(1.4); -webkit-backdrop-filter: blur(64px) saturate(1.4);
+    background: rgba(12, 11, 14, .92); backdrop-filter: none; -webkit-backdrop-filter: none;
     border: 1px solid rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 18px 50px rgba(0, 0, 0, .45);
-  }
-  /* Home screen: the saturation boost made the colourful mascot glow behind a menu on the black
-     background. Plain blur there, a little more tint. */
-  body:has(.stage.idle) :is(.menu, .dropdown, .titlebar.compact .nav, .modal) {
-    backdrop-filter: blur(64px); -webkit-backdrop-filter: blur(64px); background-color: rgba(12, 11, 14, .9);
   }
