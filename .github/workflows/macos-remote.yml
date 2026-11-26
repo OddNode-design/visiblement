@@ -3,7 +3,7 @@ name: macOS remote session
 # A GitHub Mac you can drive from your browser, with the latest Visiblement DMG installed: for testing
 # by hand when nobody has a Mac. Start it from the Actions tab ("Run workflow"); the log of the
 # "Browser link" step gives the address. The screen is protected by the VNC_PASSWORD repository secret
-# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`); the user name is "runner".
+# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`); no user name.
 # Cancel the run to end it.
 on:
   workflow_dispatch:
@@ -49,15 +49,6 @@ jobs:
         env:
           VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}
         run: |
-          # macOS offers Apple's own login (user name + account password) before plain VNC, and noVNC picks
-          # it. The runner account's password is unknown and can't be reset without it: a "vnc" account with
-          # VNC_PASSWORD logs in instead, and still sees the runner's screen (access for all users).
-          sudo sysadminctl -addUser vnc -fullName "VNC" -password "$VNC_PASSWORD" -admin 2>/dev/null
-          # Logging in as "vnc" opens a separate, black session: the screen with Visiblement is runner's.
-          # Give runner the same password, through the vnc admin (dscl wants runner's unknown old one).
-          sudo sysadminctl -resetPasswordFor runner -newPassword "$VNC_PASSWORD" -adminUser vnc -adminPassword "$VNC_PASSWORD" 2>&1 | tail -2
-          # Check it took: authenticate runner with the new password.
-          if dscl . -authonly runner "$VNC_PASSWORD"; then echo "runner password set: log in as runner"; else echo "::warning::runner password not set"; fi
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
             -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$VNC_PASSWORD" -restart -agent -console >/dev/null
@@ -70,6 +61,11 @@ jobs:
           MINUTES: ${{ inputs.minutes }}
         run: |
           git clone --depth 1 https://github.com/novnc/noVNC "$RUNNER_TEMP/novnc" >/dev/null 2>&1
+          # noVNC prefers Apple's login (a macOS account: logging in as another user opens a separate, black
+          # session, and runner's password is unknown). Without it, plain VNC with the password shares the
+          # screen of the session that is open: runner's, with Visiblement.
+          sed -i '' '/_isSupportedSecurityType(type) {/,/}/ { /securityTypeARD,/d; }' "$RUNNER_TEMP/novnc/core/rfb.js"
+          grep -q "securityTypeARD," "$RUNNER_TEMP/novnc/core/rfb.js" && echo "::warning::noVNC still offers Apple login"
           python3 -m pip install --quiet --break-system-packages websockify
           # Everything in this one step: background processes of an earlier step may not outlive it.
           python3 -m websockify --web "$RUNNER_TEMP/novnc" 6080 localhost:5900 >"$RUNNER_TEMP/websockify.log" 2>&1 &
@@ -91,15 +87,15 @@ jobs:
             fi
             url2=$(grep -o 'https://[a-z0-9-]*\.lhr\.life' "$RUNNER_TEMP/lhr.log" | tail -1)
             if [ -n "$url2" ] && [ "$url2" != "$announced2" ] && curl -fsS -o /dev/null --max-time 10 "$url2/vnc.html"; then
-              echo "Open (2nd link): $url2/vnc.html?autoconnect=1&resize=scale   user: runner"
+              echo "Open (2nd link): $url2/vnc.html?autoconnect=1&resize=scale   password only"
               announced2="$url2"
             fi
             url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
             # Announce the link only once it answers from outside.
             if [ -n "$url" ] && [ "$url" != "$announced" ] && curl -fsS -o /dev/null --max-time 10 "$url/vnc.html"; then
-              echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: runner, password: the VNC_PASSWORD secret)"
-              echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: runner"
-              echo "### Mac in your browser: [$url/vnc.html]($url/vnc.html?autoconnect=1&resize=scale) — user \`runner\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (no user name, password: the VNC_PASSWORD secret)"
+              echo "Open: $url/vnc.html?autoconnect=1&resize=scale   password only"
+              echo "### Mac in your browser: [$url/vnc.html]($url/vnc.html?autoconnect=1&resize=scale) — password: the VNC_PASSWORD secret, no user name" >> "$GITHUB_STEP_SUMMARY"
               announced="$url"
               echo "Up until $(date -r "$end"). Cancel the run to stop earlier."
             fi
