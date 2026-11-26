@@ -57,26 +57,32 @@ jobs:
           for i in $(seq 1 30); do nc -z localhost 5900 && break; sleep 2; done
           nc -z localhost 5900
 
-      - name: Browser link
-        run: |
-          git clone --depth 1 https://github.com/novnc/noVNC "$RUNNER_TEMP/novnc" >/dev/null 2>&1
-          python3 -m pip install --quiet --break-system-packages websockify
-          nohup python3 -m websockify --web "$RUNNER_TEMP/novnc" 6080 localhost:5900 >"$RUNNER_TEMP/websockify.log" 2>&1 &
-          nohup cloudflared tunnel --no-autoupdate --url http://localhost:6080 >"$RUNNER_TEMP/tunnel.log" 2>&1 &
-          for i in $(seq 1 30); do
-            url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
-            [ -n "$url" ] && break; sleep 2
-          done
-          echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: vnc, password: the VNC_PASSWORD secret)"
-          echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: vnc"
-          # Also at the top of the run page, readable while the run goes on.
-          echo "### Mac in your browser: [$url]($url/vnc.html?autoconnect=1&resize=scale) — user \`vnc\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Keep the Mac up
+      - name: Browser link, kept up until the end
         env:
           MINUTES: ${{ inputs.minutes }}
         run: |
-          m=$(printf '%s' "$MINUTES" | tr -cd '0-9'); m=${m:-60}
-          [ "$m" -gt 350 ] && m=350
-          echo "Up for $m minutes. Cancel the run to stop earlier."
-          sleep $(( m * 60 ))
+          git clone --depth 1 https://github.com/novnc/noVNC "$RUNNER_TEMP/novnc" >/dev/null 2>&1
+          python3 -m pip install --quiet --break-system-packages websockify
+          # Everything in this one step: background processes of an earlier step may not outlive it.
+          python3 -m websockify --web "$RUNNER_TEMP/novnc" 6080 localhost:5900 >"$RUNNER_TEMP/websockify.log" 2>&1 &
+          m=$(printf '%s' "$MINUTES" | tr -cd '0-9'); m=${m:-60}; [ "$m" -gt 350 ] && m=350
+          end=$(( $(date +%s) + m * 60 ))
+          announced=""
+          while [ "$(date +%s)" -lt "$end" ]; do
+            # A fresh tunnel whenever the previous one is gone (cloudflared can drop the connection).
+            if ! pgrep -x cloudflared >/dev/null; then
+              : >"$RUNNER_TEMP/tunnel.log"
+              cloudflared tunnel --no-autoupdate --url http://localhost:6080 >"$RUNNER_TEMP/tunnel.log" 2>&1 &
+              announced=""
+            fi
+            url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
+            # Announce the link only once it answers from outside.
+            if [ -n "$url" ] && [ "$url" != "$announced" ] && curl -fsS -o /dev/null --max-time 10 "$url/vnc.html"; then
+              echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: vnc, password: the VNC_PASSWORD secret)"
+              echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: vnc"
+              echo "### Mac in your browser: [$url/vnc.html]($url/vnc.html?autoconnect=1&resize=scale) — user \`vnc\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
+              announced="$url"
+              echo "Up until $(date -r "$end"). Cancel the run to stop earlier."
+            fi
+            sleep 10
+          done
