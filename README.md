@@ -104,10 +104,10 @@ mpv dessine l'image dans une première fenêtre. Une seconde fenêtre, transpare
 Installez [WiX Toolset 5](https://wixtoolset.org) avec `dotnet tool install --global wix --version 5.0.2`, puis :
 
 ```powershell
-wix build installer\visiblement.wxs -arch x64 -d Version=1.0.17 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-1.0.17-x64.msi
+wix build installer\visiblement.wxs -arch x64 -d Version=1.0.18 -d BinDir=target\release -d "UiDir=$PWD\ui" -o Visiblement-1.0.18-x64.msi
 ```
 
-Remplacez `1.0.17` par la version inscrite dans `Cargo.toml`.
+Remplacez `1.0.18` par la version inscrite dans `Cargo.toml`.
 
 Le DMG pour macOS se fabrique sur un Mac avec `bash packaging/macos/build-dmg.sh`, après `brew install mpv dylibbundler`. GitHub Actions le construit à chaque tag de version (`.github/workflows/macos.yml`).
 
