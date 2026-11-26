@@ -1,8 +1,9 @@
-// Frosted glass over the video: blurs the picture under the page's open menus, dialogs and player
-// buttons. The page draws them in a WebView above mpv's window, so CSS backdrop-filter cannot reach the
-// video; the page sends their rectangles here instead: up to five (a to e), as fractions of the scaled
-// picture (x / y / width / height, top-left origin; a width of 0 means unused), with their corner
-// radius in pixels. DYNAMIC: a change only updates a uniform, the shader is not rebuilt.
+// Frosted glass over the video, panels a to c.
+// The page draws its menus, dialogs, player buttons and messages in a WebView above mpv's window, so
+// CSS backdrop-filter cannot reach the video; the page sends their rectangles here instead, as fractions
+// of the scaled picture (x / y / width / height, top-left origin; a width of 0 means unused), with their
+// corner radius in px. Two files of at most 16 parameters: mpv's older renderer (macOS) allows no more.
+// DYNAMIC (Windows): a change only updates a uniform; macOS gets a copy without it (src/app.rs).
 
 //!PARAM ax
 //!TYPE DYNAMIC float
@@ -49,36 +50,6 @@
 //!PARAM cr
 //!TYPE DYNAMIC float
 0.0
-//!PARAM dx
-//!TYPE DYNAMIC float
-0.0
-//!PARAM dy
-//!TYPE DYNAMIC float
-0.0
-//!PARAM dw
-//!TYPE DYNAMIC float
-0.0
-//!PARAM dh
-//!TYPE DYNAMIC float
-0.0
-//!PARAM dr
-//!TYPE DYNAMIC float
-0.0
-//!PARAM ex
-//!TYPE DYNAMIC float
-0.0
-//!PARAM ey
-//!TYPE DYNAMIC float
-0.0
-//!PARAM ew
-//!TYPE DYNAMIC float
-0.0
-//!PARAM eh
-//!TYPE DYNAMIC float
-0.0
-//!PARAM er
-//!TYPE DYNAMIC float
-0.0
 //!PARAM radius
 //!TYPE DYNAMIC float
 28.0
@@ -98,9 +69,7 @@ float box(vec2 p, float x, float y, float w, float h, float r) {
 
 vec4 hook() {
     vec2 p = HOOKED_pos * HOOKED_size;
-    float d = min(min(box(p, ax, ay, aw, ah, ar), box(p, bx, by, bw, bh, br)),
-              min(min(box(p, cx, cy, cw, ch, cr), box(p, dx, dy, dw, dh, dr)), box(p, ex, ey, ew, eh, er)));
-    if (d > 0.0) return HOOKED_tex(HOOKED_pos);
+    if (min(min(box(p, ax, ay, aw, ah, ar), box(p, bx, by, bw, bh, br)), box(p, cx, cy, cw, ch, cr)) > 0.0) return HOOKED_tex(HOOKED_pos);
     // Disk blur: 64 taps on a golden-angle spiral, weighted toward the centre.
     vec4 sum = vec4(0.0);
     float total = 0.0;
