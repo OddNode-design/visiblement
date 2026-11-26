@@ -92,6 +92,11 @@ pub fn window_rect(h: isize) -> Option<Rect> {
     ))
 }
 
+/// Whether the left mouse button is held right now (any app's events, not just ours).
+pub fn mouse_down() -> bool {
+    NSEvent::pressedMouseButtons() & 1 != 0
+}
+
 /// The mouse in physical screen pixels (scale of the screen it is on).
 pub fn cursor() -> Option<(f64, f64)> {
     let mtm = MainThreadMarker::new()?;

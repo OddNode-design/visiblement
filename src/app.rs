@@ -706,6 +706,15 @@ pub fn run() -> Result<(), String> {
                             "grab-move" => {
                                 let Some((x, y)) = win::cursor() else { return };
                                 last_cursor = (x, y);
+                                // macOS: the page may never hear the button go up; a move without it ends the grab.
+                                #[cfg(target_os = "macos")]
+                                if !win::mouse_down() {
+                                    grab = None;
+                                }
+                                // Only a plain window moves or resizes: a late move must not undo fullscreen.
+                                if mode != Mode::Normal {
+                                    grab = None;
+                                }
                                 if let Some(g) = &grab {
                                     let min = (MIN_W * ui.scale_factor(), MIN_H * ui.scale_factor());
                                     let (px, py, w, h) = g.apply(x, y, min);
@@ -729,6 +738,7 @@ pub fn run() -> Result<(), String> {
                             }
                             "min" => minimize(&ui, &video, true),
                             "max" => {
+                                grab = None;
                                 mode = match mode {
                                     Mode::Normal => match win::monitor_rects(hnd(&ui)) {
                                         Some((_, work)) => {
@@ -748,6 +758,7 @@ pub fn run() -> Result<(), String> {
                                 sync_video(&ui, &video, Some(&m), &mode);
                             }
                             "fs" => {
+                                grab = None;
                                 mode = match mode {
                                     Mode::Fullscreen { prev, was_max } => {
                                         win::set_rect(hnd(&ui), was_max.map_or(prev, |_| prev));
