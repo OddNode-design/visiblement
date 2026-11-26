@@ -3,7 +3,7 @@ name: macOS remote session
 # A GitHub Mac you can drive from your browser, with the latest Visiblement DMG installed: for testing
 # by hand when nobody has a Mac. Start it from the Actions tab ("Run workflow"); the log of the
 # "Browser link" step gives the address. The screen is protected by the VNC_PASSWORD repository secret
-# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`); the user name is "runner".
+# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`); the user name is "vnc".
 # Cancel the run to end it.
 on:
   workflow_dispatch:
@@ -47,8 +47,9 @@ jobs:
           VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}
         run: |
           # macOS offers Apple's own login (user name + account password) before plain VNC, and noVNC picks
-          # it: the runner account gets the same password, so "runner" + VNC_PASSWORD works either way.
-          sudo dscl . -passwd /Users/runner "$VNC_PASSWORD"
+          # it. The runner account's password is unknown and can't be reset without it: a "vnc" account with
+          # VNC_PASSWORD logs in instead, and still sees the runner's screen (access for all users).
+          sudo sysadminctl -addUser vnc -fullName "VNC" -password "$VNC_PASSWORD" -admin 2>/dev/null
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
             -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$VNC_PASSWORD" -restart -agent -console >/dev/null
@@ -66,10 +67,10 @@ jobs:
             url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
             [ -n "$url" ] && break; sleep 2
           done
-          echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: runner, password: the VNC_PASSWORD secret)"
-          echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: runner"
+          echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: vnc, password: the VNC_PASSWORD secret)"
+          echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: vnc"
           # Also at the top of the run page, readable while the run goes on.
-          echo "### Mac in your browser: [$url]($url/vnc.html?autoconnect=1&resize=scale) — user \`runner\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Mac in your browser: [$url]($url/vnc.html?autoconnect=1&resize=scale) — user \`vnc\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Keep the Mac up
         env:
