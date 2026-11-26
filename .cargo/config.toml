@@ -1,0 +1,4 @@
+# The C runtime inside the binaries: a fresh Windows has no VC++ Redistributable (vcruntime140.dll),
+# and Visiblement must start there without installing anything else.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
