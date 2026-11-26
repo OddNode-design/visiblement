@@ -3,7 +3,7 @@ name: macOS remote session
 # A GitHub Mac you can drive from your browser, with the latest Visiblement DMG installed: for testing
 # by hand when nobody has a Mac. Start it from the Actions tab ("Run workflow"); the log of the
 # "Browser link" step gives the address. The screen is protected by the VNC_PASSWORD repository secret
-# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`); the user name is "vnc".
+# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`); the user name is "runner".
 # Cancel the run to end it.
 on:
   workflow_dispatch:
@@ -50,6 +50,11 @@ jobs:
           # it. The runner account's password is unknown and can't be reset without it: a "vnc" account with
           # VNC_PASSWORD logs in instead, and still sees the runner's screen (access for all users).
           sudo sysadminctl -addUser vnc -fullName "VNC" -password "$VNC_PASSWORD" -admin 2>/dev/null
+          # Logging in as "vnc" opens a separate, black session: the screen with Visiblement is runner's.
+          # Give runner the same password, through the vnc admin (dscl wants runner's unknown old one).
+          sudo sysadminctl -resetPasswordFor runner -newPassword "$VNC_PASSWORD" -adminUser vnc -adminPassword "$VNC_PASSWORD" 2>&1 | tail -2
+          # Check it took: authenticate runner with the new password.
+          if dscl . -authonly runner "$VNC_PASSWORD"; then echo "runner password set: log in as runner"; else echo "::warning::runner password not set"; fi
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
             -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$VNC_PASSWORD" -restart -agent -console >/dev/null
@@ -83,15 +88,15 @@ jobs:
             fi
             url2=$(grep -o 'https://[a-z0-9-]*\.lhr\.life' "$RUNNER_TEMP/lhr.log" | tail -1)
             if [ -n "$url2" ] && [ "$url2" != "$announced2" ] && curl -fsS -o /dev/null --max-time 10 "$url2/vnc.html"; then
-              echo "Open (2nd link): $url2/vnc.html?autoconnect=1&resize=scale   user: vnc"
+              echo "Open (2nd link): $url2/vnc.html?autoconnect=1&resize=scale   user: runner"
               announced2="$url2"
             fi
             url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
             # Announce the link only once it answers from outside.
             if [ -n "$url" ] && [ "$url" != "$announced" ] && curl -fsS -o /dev/null --max-time 10 "$url/vnc.html"; then
-              echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: vnc, password: the VNC_PASSWORD secret)"
-              echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: vnc"
-              echo "### Mac in your browser: [$url/vnc.html]($url/vnc.html?autoconnect=1&resize=scale) — user \`vnc\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
+              echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (user: runner, password: the VNC_PASSWORD secret)"
+              echo "Open: $url/vnc.html?autoconnect=1&resize=scale   user: runner"
+              echo "### Mac in your browser: [$url/vnc.html]($url/vnc.html?autoconnect=1&resize=scale) — user \`runner\`, password: the VNC_PASSWORD secret" >> "$GITHUB_STEP_SUMMARY"
               announced="$url"
               echo "Up until $(date -r "$end"). Cancel the run to stop earlier."
             fi
