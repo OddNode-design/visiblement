@@ -17,7 +17,7 @@ PID=$!
 sleep 10
 screencapture -x "$OUT/1-argument.png" || true
 alive=0; kill -0 $PID 2>/dev/null && alive=1
-kill $PID 2>/dev/null; sleep 1
+kill $PID 2>/dev/null; wait $PID 2>/dev/null; sleep 3 # LaunchServices refuses an app still shutting down (error -600)
 
 # 2. The way Finder does it: LaunchServices, the file comes as an Apple Event.
 open -a "$PWD/$APP" "$PWD/$OUT/test.mp4"
