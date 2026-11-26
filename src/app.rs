@@ -767,6 +767,9 @@ pub fn run() -> Result<(), String> {
                                     },
                                 };
                                 let fullscreen = matches!(mode, Mode::Fullscreen { .. });
+                                if std::env::var_os("VISIBLEMENT_LOG").is_some() {
+                                    eprintln!("fs {fullscreen}: monitor {:?} -> ui {:?}", win::monitor_rects(hnd(&ui)), win::window_rect(hnd(&ui)));
+                                }
                                 eval(&webview, &format!("window.vb && vb.fullscreen({fullscreen})"));
                                 sync_video(&ui, &video, Some(&m), &mode);
                             }
