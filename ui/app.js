@@ -105,7 +105,7 @@ function render() {
 
   renderVolume();
   renderMarks(d);
-  layoutMask();
+  layoutMask(); queueGlass(); // the picture moved or resized: the blur follows
 
   const alpha = st.alpha === "true", tiles = st.background === "tiles";
   // Always available on pictures; the tooltip says whether this file really has transparency.
@@ -1178,18 +1178,33 @@ if (!window.ipc) vb.lang(null);
 
 // --- Frosted glass over the video. CSS backdrop-filter only blurs the page, and the video is drawn by
 // mpv in its own window below it: mpv blurs the picture under the open menus itself (src/blur.glsl).
-// Up to three glass panels (the largest), as fractions of the window, with their corner radius.
+// Up to five glass panels (the largest), as fractions of the picture's rectangle (the shader works on
+// the scaled video, not the window: a portrait video only fills a band), with their corner radius.
+// A panel counts from the moment it is told to open until it is told to close (its class), not while
+// it fades: the blur must not outlive the panel. Opening, it waits until the panel is half faded in:
+// the blur must not show up before it either.
+const glassPanels = [
+  [".menu", el => el.classList.contains("open")],
+  [".dropdown", el => el.parentElement.classList.contains("open")],
+  [".subdrop", el => el.parentElement.matches(".open, :hover")],
+  [".titlebar .nav", el => el.closest(".titlebar").matches(".compact.menu-open")],
+  [".modal", el => el.parentElement.classList.contains("open")],
+  [".bar .group", () => !stage.matches(".idle, .hide-ui")],
+  [".toast, .job, .notice", el => el.classList.contains("show")],
+];
 let glassSent = "";
 function sendGlass() {
-  const dpr = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
-  const open = [...document.querySelectorAll(".menu, .dropdown, .subdrop, .titlebar .nav, .modal")]
-    .filter(el => { const c = getComputedStyle(el); return c.visibility === "visible" && c.backdropFilter !== "none" && el.offsetWidth > 0; })
+  const dpr = devicePixelRatio || 1, od = json("osd-dimensions");
+  if (!od || !od.w) return;
+  const X = od.ml / dpr, Y = od.mt / dpr, W = (od.w - od.ml - od.mr) / dpr || 1, H = (od.h - od.mt - od.mb) / dpr || 1;
+  const open = glassPanels.flatMap(([sel, isOpen]) => [...document.querySelectorAll(sel)].filter(el => el.offsetWidth > 0 && isOpen(el) && +getComputedStyle(el).opacity >= .5))
     .map(el => ({ r: el.getBoundingClientRect(), round: parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0 }))
-    .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height).slice(0, 3);
-  const f = v => v.toFixed(4), opts = [`corner=${(Math.max(0, ...open.map(o => o.round)) * dpr).toFixed(1)}`, `radius=${(28 * dpr).toFixed(1)}`];
-  "abc".split("").forEach((k, i) => {
-    const r = open[i]?.r;
-    opts.push(`${k}x=${f(r ? r.left / W : 0)}`, `${k}y=${f(r ? r.top / H : 0)}`, `${k}w=${f(r ? r.width / W : 0)}`, `${k}h=${f(r ? r.height / H : 0)}`);
+    .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height).slice(0, 5);
+  const f = v => v.toFixed(4), opts = [`radius=${(28 * dpr).toFixed(1)}`];
+  "abcde".split("").forEach((k, i) => {
+    const o = open[i], r = o?.r;
+    opts.push(`${k}x=${f(r ? (r.left - X) / W : 0)}`, `${k}y=${f(r ? (r.top - Y) / H : 0)}`,
+      `${k}w=${f(r ? r.width / W : 0)}`, `${k}h=${f(r ? r.height / H : 0)}`, `${k}r=${((o?.round || 0) * dpr).toFixed(1)}`);
   });
   const v = opts.join(",");
   if (v !== glassSent) { glassSent = v; cmd("change-list", "glsl-shader-opts", "add", v); }
@@ -1197,6 +1212,8 @@ function sendGlass() {
 let glassRaf = 0;
 const queueGlass = () => { if (!glassRaf) glassRaf = requestAnimationFrame(() => { glassRaf = 0; sendGlass(); }); };
 // A menu opens or closes by a class change, ends its scale-in with a transition, moves with the window.
-new MutationObserver(queueGlass).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
+// Opening panels fade in (.15 to .22 s): a second look once they are about half way.
+new MutationObserver(() => { queueGlass(); setTimeout(queueGlass, 90); }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
 document.addEventListener("transitionend", queueGlass, true);
+document.addEventListener("pointerover", queueGlass, true); // side menus open on hover
 addEventListener("resize", queueGlass);
