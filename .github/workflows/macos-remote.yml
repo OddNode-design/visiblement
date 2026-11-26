@@ -1,0 +1,75 @@
+name: macOS remote session
+
+# A GitHub Mac you can drive from your browser, with the latest Visiblement DMG installed: for testing
+# by hand when nobody has a Mac. Start it from the Actions tab ("Run workflow"); the log of the
+# "Browser link" step gives the address. The screen is protected by the VNC_PASSWORD repository secret
+# (8 characters at most; set it once with `gh secret set VNC_PASSWORD`). Cancel the run to end it.
+on:
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: "How long the Mac stays up (minutes, 350 at most)"
+        default: "60"
+
+concurrency: macos-remote
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - name: Password present
+        env:
+          VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}
+        run: |
+          if [ -z "$VNC_PASSWORD" ]; then
+            echo "::error::Set the VNC_PASSWORD repository secret first (gh secret set VNC_PASSWORD)."
+            exit 1
+          fi
+
+      - name: Install the latest Visiblement
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" --pattern '*macos-arm64.dmg' --dir "$RUNNER_TEMP"
+          hdiutil attach "$RUNNER_TEMP"/*.dmg -mountpoint /Volumes/Visiblement -nobrowse
+          cp -R /Volumes/Visiblement/Visiblement.app /Applications/
+          hdiutil detach /Volumes/Visiblement
+          # A test video on the desktop, to drag onto the app.
+          brew install ffmpeg cloudflared >/dev/null
+          ffmpeg -v error -f lavfi -i "testsrc2=size=1920x1080:rate=25:duration=60" -f lavfi -i "sine=frequency=440:duration=60" \
+            -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest ~/Desktop/test-1080p.mp4
+          open /Applications/Visiblement.app ~/Desktop/test-1080p.mp4
+
+      - name: Screen sharing
+        env:
+          VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}
+        run: |
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure -access -on -privs -all -allowAccessFor -allUsers \
+            -clientopts -setvnclegacy -vnclegacy yes -setvncpw -vncpw "$VNC_PASSWORD" -restart -agent -console >/dev/null
+          # Wait for the VNC server.
+          for i in $(seq 1 30); do nc -z localhost 5900 && break; sleep 2; done
+          nc -z localhost 5900
+
+      - name: Browser link
+        run: |
+          git clone --depth 1 https://github.com/novnc/noVNC "$RUNNER_TEMP/novnc" >/dev/null 2>&1
+          python3 -m pip install --quiet --break-system-packages websockify
+          nohup python3 -m websockify --web "$RUNNER_TEMP/novnc" 6080 localhost:5900 >"$RUNNER_TEMP/websockify.log" 2>&1 &
+          nohup cloudflared tunnel --no-autoupdate --url http://localhost:6080 >"$RUNNER_TEMP/tunnel.log" 2>&1 &
+          for i in $(seq 1 30); do
+            url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
+            [ -n "$url" ] && break; sleep 2
+          done
+          echo "::notice title=Mac in your browser::$url/vnc.html?autoconnect=1&resize=scale (password: the VNC_PASSWORD secret)"
+          echo "Open: $url/vnc.html?autoconnect=1&resize=scale"
+
+      - name: Keep the Mac up
+        env:
+          MINUTES: ${{ inputs.minutes }}
+        run: |
+          m=$(printf '%s' "$MINUTES" | tr -cd '0-9'); m=${m:-60}
+          [ "$m" -gt 350 ] && m=350
+          echo "Up for $m minutes. Cancel the run to stop earlier."
+          sleep $(( m * 60 ))
