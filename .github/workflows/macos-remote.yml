@@ -67,13 +67,24 @@ jobs:
           python3 -m websockify --web "$RUNNER_TEMP/novnc" 6080 localhost:5900 >"$RUNNER_TEMP/websockify.log" 2>&1 &
           m=$(printf '%s' "$MINUTES" | tr -cd '0-9'); m=${m:-60}; [ "$m" -gt 350 ] && m=350
           end=$(( $(date +%s) + m * 60 ))
-          announced=""
+          announced=""; announced2=""
           while [ "$(date +%s)" -lt "$end" ]; do
             # A fresh tunnel whenever the previous one is gone (cloudflared can drop the connection).
             if ! pgrep -x cloudflared >/dev/null; then
               : >"$RUNNER_TEMP/tunnel.log"
               cloudflared tunnel --no-autoupdate --url http://localhost:6080 >"$RUNNER_TEMP/tunnel.log" 2>&1 &
               announced=""
+            fi
+            # Second, independent tunnel (localhost.run, over SSH, no account): Cloudflare's quick tunnels
+            # sometimes answer error 1033 from some places.
+            if ! pgrep -f "localhost.run" >/dev/null; then
+              : >"$RUNNER_TEMP/lhr.log"
+              ssh -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -R 80:localhost:6080 nokey@localhost.run                 >"$RUNNER_TEMP/lhr.log" 2>&1 </dev/null &
+            fi
+            url2=$(grep -o 'https://[a-z0-9-]*\.lhr\.life' "$RUNNER_TEMP/lhr.log" | tail -1)
+            if [ -n "$url2" ] && [ "$url2" != "$announced2" ] && curl -fsS -o /dev/null --max-time 10 "$url2/vnc.html"; then
+              echo "Open (2nd link): $url2/vnc.html?autoconnect=1&resize=scale   user: vnc"
+              announced2="$url2"
             fi
             url=$(grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' "$RUNNER_TEMP/tunnel.log" | head -1)
             # Announce the link only once it answers from outside.
