@@ -1168,4 +1168,95 @@ mod tests {
         assert_eq!(tag_from_release_url("https://github.com/o/r/releases"), None);
         assert_eq!(tag_from_release_url(""), None);
     }
+
+    /// Cost of grabbing the displayed frame (screenshot-raw), the base of a page-side blur.
+    /// Needs target/release/libmpv-2.dll and ffmpeg: cargo test --release -- --ignored --nocapture frame_grab
+    #[test]
+    #[ignore]
+    fn frame_grab_cost() {
+        #[repr(C)]
+        struct Node {
+            u: u64,
+            format: c_int,
+        }
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release");
+        let (lib, api) = load_mpv(&dir).expect("libmpv");
+        type CmdRet = unsafe extern "C" fn(Handle, *const *const c_char, *mut Node) -> c_int;
+        type FreeNode = unsafe extern "C" fn(*mut Node);
+        let cmd_ret: libloading::Symbol<CmdRet> = unsafe { lib.get(b"mpv_command_ret\0") }.unwrap();
+        let free_node: libloading::Symbol<FreeNode> = unsafe { lib.get(b"mpv_free_node_contents\0") }.unwrap();
+        let tmp = std::env::temp_dir().join("visiblement-grab-bench");
+        let _ = std::fs::create_dir_all(&tmp);
+        for (name, size, codec) in [("1080p.mp4", "1920x1080", "libx264"), ("2160p.mp4", "3840x2160", "libx265")] {
+            let file = tmp.join(name);
+            if !file.exists() {
+                let src = format!("testsrc2=size={size}:rate=25:duration=8");
+                let ok = std::process::Command::new("ffmpeg")
+                    .args(["-v", "error", "-y", "-f", "lavfi", "-i", &src, "-c:v", codec, "-pix_fmt", "yuv420p"])
+                    .arg(&file)
+                    .status()
+                    .unwrap()
+                    .success();
+                assert!(ok);
+            }
+            let h = unsafe { (api.create)() };
+            let m = Mpv { h, ..api };
+            for (k, v) in [("config", "no"), ("vo", "gpu-next"), ("hwdec", "auto-safe"), ("pause", "yes"), ("geometry", "1280x720")] {
+                m.option(k, v);
+            }
+            assert!(unsafe { (m.initialize)(h) } >= 0);
+            m.cmd(&["loadfile", &file.to_string_lossy()]);
+            let start = std::time::Instant::now();
+            while m.get("video-params/w").is_none() && start.elapsed().as_secs() < 10 {
+                thread::sleep(std::time::Duration::from_millis(50));
+            }
+            thread::sleep(std::time::Duration::from_millis(500));
+            for mode in ["video", "window"] {
+            let args: Vec<CString> = ["screenshot-raw", mode, "bgra"].iter().map(|s| CString::new(*s).unwrap()).collect();
+            let mut ptrs: Vec<*const c_char> = args.iter().map(|a| a.as_ptr()).collect();
+            ptrs.push(ptr::null());
+            let mut times = Vec::new();
+            for _ in 0..15 {
+                let mut node = Node { u: 0, format: 0 };
+                let t0 = std::time::Instant::now();
+                let r = unsafe { cmd_ret(h, ptrs.as_ptr(), &mut node) };
+                times.push(t0.elapsed().as_secs_f64() * 1000.0);
+                assert!(r >= 0, "screenshot-raw failed: {r}");
+                unsafe { free_node(&mut node) };
+            }
+            times.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            println!(
+                "{name} {mode}: hwdec={} median {:.1} ms, min {:.1}, max {:.1}",
+                m.get("hwdec-current").unwrap_or_default(),
+                times[times.len() / 2],
+                times[0],
+                times[times.len() - 1]
+            );
+            }
+            unsafe { (m.destroy)(h) };
+        }
+        // Box downscale of a 1080p BGRA frame to 240 x 135 (what the page would receive).
+        let (w, hh) = (1920usize, 1080usize);
+        let src = vec![128u8; w * hh * 4];
+        let t0 = std::time::Instant::now();
+        let (ow, oh) = (240usize, 135usize);
+        let mut out = vec![0u8; ow * oh * 4];
+        for oy in 0..oh {
+            for ox in 0..ow {
+                let mut acc = [0u32; 4];
+                for y in oy * 8..oy * 8 + 8 {
+                    for x in ox * 8..ox * 8 + 8 {
+                        let i = (y * w + x) * 4;
+                        for c in 0..4 {
+                            acc[c] += u32::from(src[i + c]);
+                        }
+                    }
+                }
+                for c in 0..4 {
+                    out[(oy * ow + ox) * 4 + c] = (acc[c] / 64) as u8;
+                }
+            }
+        }
+        println!("downscale 1080p -> 240x135: {:.2} ms (out {})", t0.elapsed().as_secs_f64() * 1000.0, out.len());
+    }
 }

@@ -533,9 +533,10 @@
   .toast.long { border-radius: 12px; max-width: min(560px, calc(100vw - 32px)); white-space: normal; text-align: left; }
   .toast.long small { display: block; margin-top: 4px; font: 11.5px/1.45 Roboto, sans-serif; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
   /* Context menus (right click, settings, subtitles, nav menus, burger panel), dialogs and messages:
-     frosted glass, blur only. The blur reaches the page; over the video mpv blurs it (src/blur.glsl). */
+     frosted glass. The blur only reaches the page: the video is drawn by mpv in its own window below,
+     so over the picture the dark tint alone does the job (dense enough to keep text readable). */
   .menu, .dropdown, .titlebar.compact .nav, .modal, .toast, .job, .notice {
-    background: rgba(16, 15, 19, .74); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
+    background: rgba(16, 15, 19, .84); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
     border: 1px solid rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 18px 50px rgba(0, 0, 0, .45);
   }
   /* Home screen: the saturation boost made the colourful mascot glow behind a menu on the black
