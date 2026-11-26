@@ -1076,7 +1076,8 @@ syncMaskMenu();
 var v360 = false, v360Key = null, looked = false;
 let view, look = null, viewRaf = 0;
 const rad = d => d * Math.PI / 180;
-const sendView = () => { viewRaf = 0; send({ t: "set", k: "glsl-shader-opts", v: `yaw=${rad(view.yaw)},pitch=${rad(view.pitch)},fov=${rad(view.fov)}` }); };
+// "add" keeps the other shaders' parameters (the menu blur's).
+const sendView = () => { viewRaf = 0; cmd("change-list", "glsl-shader-opts", "add", `yaw=${rad(view.yaw)},pitch=${rad(view.pitch)},fov=${rad(view.fov)}`); };
 const queueView = () => { viewRaf ||= requestAnimationFrame(sendView); };
 function set360(on, quiet) {
   v360 = on; view = { yaw: 0, pitch: 0, fov: 100 };
@@ -1174,3 +1175,28 @@ new MutationObserver(fitBar).observe($("alphaBtn"), { attributes: true, attribut
 
 // Plain browser preview (no Rust behind): pick the language right away.
 if (!window.ipc) vb.lang(null);
+
+// --- Frosted glass over the video. CSS backdrop-filter only blurs the page, and the video is drawn by
+// mpv in its own window below it: mpv blurs the picture under the open menus itself (src/blur.glsl).
+// Up to three glass panels (the largest), as fractions of the window, with their corner radius.
+let glassSent = "";
+function sendGlass() {
+  const dpr = devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  const open = [...document.querySelectorAll(".menu, .dropdown, .subdrop, .titlebar .nav, .modal")]
+    .filter(el => { const c = getComputedStyle(el); return c.visibility === "visible" && c.backdropFilter !== "none" && el.offsetWidth > 0; })
+    .map(el => ({ r: el.getBoundingClientRect(), round: parseFloat(getComputedStyle(el).borderTopLeftRadius) || 0 }))
+    .sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height).slice(0, 3);
+  const f = v => v.toFixed(4), opts = [`corner=${(Math.max(0, ...open.map(o => o.round)) * dpr).toFixed(1)}`, `radius=${(28 * dpr).toFixed(1)}`];
+  "abc".split("").forEach((k, i) => {
+    const r = open[i]?.r;
+    opts.push(`${k}x=${f(r ? r.left / W : 0)}`, `${k}y=${f(r ? r.top / H : 0)}`, `${k}w=${f(r ? r.width / W : 0)}`, `${k}h=${f(r ? r.height / H : 0)}`);
+  });
+  const v = opts.join(",");
+  if (v !== glassSent) { glassSent = v; cmd("change-list", "glsl-shader-opts", "add", v); }
+}
+let glassRaf = 0;
+const queueGlass = () => { if (!glassRaf) glassRaf = requestAnimationFrame(() => { glassRaf = 0; sendGlass(); }); };
+// A menu opens or closes by a class change, ends its scale-in with a transition, moves with the window.
+new MutationObserver(queueGlass).observe(document.body, { subtree: true, attributes: true, attributeFilter: ["class"] });
+document.addEventListener("transitionend", queueGlass, true);
+addEventListener("resize", queueGlass);

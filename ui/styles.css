@@ -545,8 +545,8 @@
     z-index: -1; /* above the menu's own background (backdrop-filter makes it a stacking context), below its items */
   }
   .modal { position: relative; } /* holds the grain layer */
-  /* Home screen: on its black background the colourful mascot showed through any menu (a glow with the blur). No blur there,
-     and nearly opaque. */
+  /* Home screen: the saturation boost made the colourful mascot glow behind a menu on the black
+     background. Plain blur there, a little more tint. */
   body:has(.stage.idle) :is(.menu, .dropdown, .titlebar.compact .nav, .modal) {
-    backdrop-filter: none; -webkit-backdrop-filter: none; background-color: rgba(16, 15, 19, .96);
+    backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); background-color: rgba(16, 15, 19, .82);
   }
