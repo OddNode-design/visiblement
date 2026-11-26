@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-14]          # Apple Silicon
+        runner: [macos-15]          # Apple Silicon (macos-14 is retired)
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
