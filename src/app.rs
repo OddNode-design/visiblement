@@ -178,6 +178,9 @@ fn sync_video(ui: &Window, video: &Window, m: Option<&Mpv>, mode: &Mode) {
     }
     #[cfg(target_os = "macos")]
     {
+        if std::env::var_os("VISIBLEMENT_LOG").is_some() {
+            eprintln!("sync_video: ui {rect:?} -> video {:?}", win::window_rect(hnd(video)));
+        }
         win::set_render_size(size.width, size.height);
         win::presentation(fullscreen);
     }
