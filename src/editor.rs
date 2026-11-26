@@ -302,7 +302,7 @@ pub fn export(m: Mpv) -> thread::JoinHandle<()> {
             return;
         };
         if out == src_path {
-            m.toast("Choisis un autre nom que le fichier d'origine");
+            m.toast("Choisissez un autre nom que le fichier d'origine");
             return;
         }
         let out_ext = out.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or(ext);
@@ -375,7 +375,7 @@ pub fn convert(m: Mpv, id: String, alpha: bool, seq: Option<(String, String)>) -
             return;
         };
         if out == src_path {
-            m.toast("Choisis un autre nom que le fichier d'origine");
+            m.toast("Choisissez un autre nom que le fichier d'origine");
             return;
         }
         crate::app::EXPORTING.store(true, Ordering::Relaxed);

@@ -25,7 +25,7 @@ const EN = {
   "Espace": "Space", "Plein écran": "Fullscreen", "Quitter": "Quit",
   // Window and controls
   "Réduire": "Minimize", "Agrandir": "Maximize", "Fermer": "Close",
-  "Glisse une vidéo ici ou clic droit pour le menu": "Drop a video here, or right-click for the menu",
+  "Glissez une vidéo ici ou faites un clic droit pour le menu": "Drop a video here, or right-click for the menu",
   "Rechercher une mise à jour": "Check for updates",
   "Précédente (Page préc.)": "Previous (Page Up)", "Image précédente (,)": "Previous frame (,)", "Lecture (Espace)": "Play (Space)",
   "Pause (Espace)": "Pause (Space)", "Image suivante (;)": "Next frame (.)", "Suivante (Page suiv.)": "Next (Page Down)",
@@ -87,7 +87,7 @@ const EN = {
   "Vue 360° : glissez pour regarder autour": "360° view: drag to look around", "Vue 360° désactivée": "360° view off",
   "Export en cours, patiente avant de fermer": "Export running, wait before closing", "Ce fichier n'existe plus": "This file no longer exists",
   "Impossible de vérifier les mises à jour": "Can't check for updates", "Impossible de vérifier les mises à jour (hors ligne ?)": "Can't check for updates (offline?)",
-  "Aucun fichier ouvert": "No file open", "Choisis un autre nom que le fichier d'origine": "Pick a name other than the original file's",
+  "Aucun fichier ouvert": "No file open", "Choisissez un autre nom que le fichier d'origine": "Pick a name other than the original file's",
   "Échec de l'export": "Export failed", "Frame copiée": "Frame copied",
   "Runtime NDI introuvable : installez NDI Tools": "NDI runtime not found: install NDI Tools",
   "Impossible de se connecter à la source NDI": "Can't connect to the NDI source", "La source NDI n'envoie pas d'image": "The NDI source sends no picture",

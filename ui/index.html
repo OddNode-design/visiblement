@@ -75,7 +75,7 @@
         <img class="rim" src="cloud-rim.svg" alt="">
         <svg class="mascot" id="mascot" viewBox="0 0 512 512" aria-label="Visiblement"><g fill="#121114" id="eyes"></g></svg>
       </div>
-      <div class="hint">Glisse une vidéo ici ou clic droit pour le menu</div>
+      <div class="hint">Glissez une vidéo ici ou faites un clic droit pour le menu</div>
       <!-- Only when an update exists: the arrow dives into the line on hover and drops back in from the top -->
       <span class="ver" id="verText"></span>
       <button class="upd" id="updBtn" aria-label="Mettre à jour">
@@ -89,7 +89,7 @@
 
     <canvas class="mask" id="mask"></canvas>
     <div class="controls" id="controls">
-      <div class="timeline" id="timeline">
+      <div class="timeline" id="timeline" role="slider" tabindex="0" aria-label="Position" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
         <div class="track"><div class="fill" id="fill"></div></div>
         <div class="sel" id="sel"></div>
         <div id="marks"></div>
@@ -104,7 +104,7 @@
         <button id="next" data-tip="Suivante (Page suiv.)"><i class="ico" data-i="skip-forward"></i></button>
         <div class="vol" id="vol">
           <button id="mute" data-tip="Muet (M)"><i class="ico" id="volIcon" data-i="volume-2"></i></button>
-          <div class="slider"><div class="rail" id="rail"><div class="level" id="level"></div><div class="knob" id="knob"></div></div></div>
+          <div class="slider"><div class="rail" id="rail" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100"><div class="level" id="level"></div><div class="knob" id="knob"></div></div></div>
         </div>
         <span class="stat"><b id="time">0:00</b> / <span id="dur">0:00</span></span>
         <span class="stat" id="frameStat">Frame <b id="frame">0</b> / <span id="frames">0</span></span>
@@ -172,7 +172,7 @@
       <header class="conv-top">
         <h2 id="convTitle">Convertir</h2>
         <!-- Same switch as the Infos tabs: a white pill slides under the choice -->
-        <div class="tabs src-tabs" id="convSource">
+        <div class="tabs src-tabs" id="convSource" role="tablist" aria-label="Source">
           <span class="pill"></span>
           <button data-src="file" class="on">Fichier ouvert</button><button data-src="seq">Séquence d'images</button>
         </div>
@@ -243,7 +243,7 @@
   <div class="modal-back" id="infoBack">
     <div class="modal info" role="dialog" aria-modal="true" aria-labelledby="infoName">
       <div class="info-head"><h2 id="infoName">Infos</h2><span id="infoSub"></span><button class="x-close" data-close aria-label="Fermer" data-tip="Fermer"><i class="ico" data-i="x"></i></button></div>
-      <div class="tabs" id="infoTabs">
+      <div class="tabs" id="infoTabs" role="tablist" aria-label="Infos">
         <span class="pill"></span>
         <button class="on" data-tab="general">Général</button>
         <button data-tab="meta">Métadonnées</button>

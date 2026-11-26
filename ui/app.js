@@ -4,6 +4,8 @@ const win = $("win"), stage = $("stage");
 // macOS: shortcuts use Cmd where Windows uses Ctrl; the root gets a "mac" class for platform styling.
 const IS_MAC = /Mac/.test(navigator.platform);
 if (IS_MAC) document.documentElement.classList.add("mac");
+// "Reduce motion" (system setting): the mascot's eyes, the audio sphere and the loader keep still.
+const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 // Icon-only buttons: their tooltip, without the shortcut, is also their name for screen readers.
 document.querySelectorAll("button[data-tip]:not([aria-label])").forEach(b => b.setAttribute("aria-label", b.dataset.tip.replace(/\s*\(.*\)\s*$/, "")));
 // The shortcut labels in the menus, the Mac way: ⌘ for Ctrl, ⌥ for Alt.
@@ -98,6 +100,10 @@ function render() {
   $("frameStat").hidden = !hasFrames;
   if (hasFrames) { $("frame").textContent = frame; $("frames").textContent = frames; }
   if (!scrubbing) $("fill").style.width = (d ? Math.min(1, t / d) * 100 : 0) + "%";
+  // Screen readers: the timeline is a slider (arrows seek, see the key handler).
+  const tl = $("timeline");
+  tl.setAttribute("aria-valuemax", Math.round(d || 0)); tl.setAttribute("aria-valuenow", Math.round(t || 0));
+  tl.setAttribute("aria-valuetext", `${fmt(t)} / ${fmt(d)}`);
 
   const paused = st.pause === "yes";
   stage.classList.toggle("playing", !paused && !idle);
@@ -211,7 +217,7 @@ function eyeLoop(t) {
     });
   }
   const wave = shown && stage.classList.contains("audio") && stage.classList.contains("playing");
-  if (moved || wave) { requestAnimationFrame(eyeLoop); return; }
+  if ((moved || wave) && !REDUCED) { requestAnimationFrame(eyeLoop); return; }
   // Still: sleep until the next blink or glance (or a check every 0.5 s while the mascot is hidden).
   const next = Math.min(nextBlink, Math.max(nextGlance, lastMove + 2500));
   eyeAwake = false;
@@ -246,7 +252,7 @@ function drawMist() {
 }
 (function mistLoop(t) {
   const playing = stage.classList.contains("audio") && stage.classList.contains("playing");
-  if (playing && t - mistLast > 33) {
+  if (playing && t - mistLast > 33 && !REDUCED) {
     mistTime += Math.min(t - mistLast, 100) / 1000 * 0.35;
     mistLast = t;
     drawMist();
@@ -268,7 +274,7 @@ function dotLevel(t, i, j) {
 function loaderFrame(now) {
   const t = (now - loadingSince) / 1000;
   $("loader").classList.toggle("show", t > 0.18); // fast opens never flash it
-  dots.forEach((el, k) => el.style.opacity = dotLevel(t, k % 5, Math.floor(k / 5)).toFixed(3));
+  dots.forEach((el, k) => el.style.opacity = dotLevel(REDUCED ? 0.3 : t, k % 5, Math.floor(k / 5)).toFixed(3)); // still dots: reduced motion
   loaderRaf = requestAnimationFrame(loaderFrame);
 }
 function startLoading() { if (!loaderRaf) { loadingSince = performance.now(); loaderRaf = requestAnimationFrame(loaderFrame); } }
@@ -350,6 +356,7 @@ function renderVolume() {
   const muted = st.mute === "yes";
   const v = muted ? 0 : (volTarget ?? num("volume") / 100);
   $("level").style.width = v * 100 + "%"; $("knob").style.left = v * 100 + "%";
+  $("rail").setAttribute("aria-valuenow", Math.round(v * 100));
   swapIcon($("volIcon"), v === 0 ? "volume-off" : v < 0.5 ? "volume-1" : "volume-2");
 }
 function setVolume(v) {
@@ -843,7 +850,7 @@ function moveTabPill(box = $("infoTabs")) {
   pill.style.width = on.offsetWidth + "px"; pill.style.translate = (on.offsetLeft - 3) + "px 0";
 }
 $("infoTabs").querySelectorAll("button").forEach(b => b.onclick = () => {
-  $("infoTabs").querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+  $("infoTabs").querySelectorAll("button").forEach(x => { x.classList.toggle("on", x === b); x.setAttribute("aria-selected", x === b); });
   infoTab = b.dataset.tab; moveTabPill(); renderInfo();
   const body = $("infoBody"); body.scrollTop = 0; body.classList.remove("swap"); void body.offsetWidth; body.classList.add("swap");
 });
@@ -901,7 +908,7 @@ function renderConv() {
   $("convGo").disabled = seq && !conv.seq;
   const stem = seq ? (conv.seqLabel.split(/[#.]/)[0].replace(/[_\-.]+$/, "") || "sequence") : (st.filename || "").replace(/\.[^.]+$/, "");
   $("convOut").textContent = `→ ${stem}_${codec.id}_${typeId}.${codec.ext}`;
-  document.querySelectorAll("#convSource button").forEach(b => b.classList.toggle("on", b.dataset.src === conv.source));
+  document.querySelectorAll("#convSource button").forEach(b => { b.classList.toggle("on", b.dataset.src === conv.source); b.setAttribute("aria-selected", b.dataset.src === conv.source); });
   moveTabPill($("convSource"));
 }
 document.querySelectorAll("#convSource button").forEach(b => b.onclick = () => { conv.source = b.dataset.src; renderConv(); });
@@ -1189,3 +1196,17 @@ new MutationObserver(fitBar).observe($("alphaBtn"), { attributes: true, attribut
 
 // Plain browser preview (no Rust behind): pick the language right away.
 if (!window.ipc) vb.lang(null);
+
+// --- Accessibility: tabs announce themselves; Tab stays inside an open dialog.
+document.querySelectorAll('[role="tablist"] button').forEach(b => { b.setAttribute("role", "tab"); b.setAttribute("aria-selected", b.classList.contains("on")); });
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "Tab") return;
+  const dialog = document.querySelector(".modal-back.open .modal");
+  if (!dialog) return;
+  const items = [...dialog.querySelectorAll("button, input, select, textarea, [tabindex]:not([tabindex='-1'])")].filter(e => !e.disabled && e.offsetParent);
+  if (!items.length) return;
+  const first = items[0], last = items[items.length - 1];
+  if (!dialog.contains(document.activeElement)) { ev.preventDefault(); first.focus(); }
+  else if (ev.shiftKey && document.activeElement === first) { ev.preventDefault(); last.focus(); }
+  else if (!ev.shiftKey && document.activeElement === last) { ev.preventDefault(); first.focus(); }
+}, true);
