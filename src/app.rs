@@ -495,7 +495,11 @@ pub fn run() -> Result<(), String> {
     sync_video(&ui, &video, Some(&m), &Mode::Normal); // picture below the title bar from the start
     // Frosted glass over the video under the page's menus (CSS blur can't reach mpv's window).
     let blur = std::env::temp_dir().join("visiblement-blur.glsl");
-    if std::fs::write(&blur, include_str!("blur.glsl")).is_ok() {
+    // macOS draws through the render API's older renderer, which knows no DYNAMIC parameters.
+    let source = include_str!("blur.glsl");
+    #[cfg(target_os = "macos")]
+    let source = source.replace("//!TYPE DYNAMIC float", "//!TYPE float");
+    if std::fs::write(&blur, source).is_ok() {
         m.cmd(&["change-list", "glsl-shaders", "append", &blur.to_string_lossy()]);
     }
     // Before each file opens: turn WAV markers (cue points, After Effects XMP) into chapters.
