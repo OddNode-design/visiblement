@@ -11,7 +11,7 @@ ffmpeg -v error -y -f lavfi -i "testsrc2=size=1280x720:rate=25:duration=20" \
   -f lavfi -i "sine=frequency=440:duration=20" -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$OUT/test.mp4"
 
 # 1. Straight from the binary, the file as an argument.
-VISIBLEMENT_LOG="$PWD/$OUT/mpv-arg.log" "$APP/Contents/MacOS/visiblement" "$PWD/$OUT/test.mp4" \
+RUST_BACKTRACE=1 VISIBLEMENT_LOG="$PWD/$OUT/mpv-arg.log" "$APP/Contents/MacOS/visiblement" "$PWD/$OUT/test.mp4" \
   >"$OUT/stdout-arg.txt" 2>&1 &
 PID=$!
 sleep 10
@@ -25,6 +25,9 @@ sleep 10
 screencapture -x "$OUT/2-open.png" || true
 pgrep -x visiblement >/dev/null && open_alive=1 || open_alive=0
 pkill -x visiblement; sleep 1
+
+# Crash reports macOS wrote for the app (where it died, with the stack of every thread).
+cp ~/Library/Logs/DiagnosticReports/visiblement*.ips "$OUT/" 2>/dev/null || true
 
 # Up is not enough (an error dialog keeps the app up): mpv must have opened a video output.
 grep -q "VO:" "$OUT/mpv-arg.log" 2>/dev/null && vo=1 || vo=0

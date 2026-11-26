@@ -35,4 +35,5 @@ jobs:
             dist/smoke/*.png
             dist/smoke/*.log
             dist/smoke/*.txt
+            dist/smoke/*.ips
           if-no-files-found: warn
