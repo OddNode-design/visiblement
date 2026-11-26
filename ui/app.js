@@ -393,8 +393,9 @@ function popover(btn, menu, build) {
     ev.stopPropagation();
     if (menu.classList.contains("open")) return closeAll();
     build();
-    const b = btn.getBoundingClientRect();
-    openAt(menu, b.right - menu.offsetWidth, b.top - menu.offsetHeight - 8, "bottom right");
+    // Flush with the player bar's right edge, above the timeline so it never covers it.
+    const b = btn.closest(".group").getBoundingClientRect(), top = $("timeline").getBoundingClientRect().top;
+    openAt(menu, b.right - menu.offsetWidth, top - menu.offsetHeight - 8, "bottom right");
     btn.classList.add("on"); hideTip();
   };
 }
@@ -683,7 +684,8 @@ navItems.forEach(item => {
 });
 addEventListener("pointerdown", ev => { if (!ev.target.closest(".nav, .burger")) closeNav(); });
 
-const modalOpen = id => { closeNav(); closeAll(); $(id).classList.add("open"); };
+// One modal at a time: opening Infos closes Convertir and the other way round.
+const modalOpen = id => { closeNav(); closeAll(); document.querySelectorAll(".modal-back.open").forEach(b => b.id !== id && closeModal(b)); $(id).classList.add("open"); };
 function closeModal(back) { back.classList.remove("open"); if (back.id === "infoBack") clearInterval(infoTimer); }
 document.querySelectorAll(".modal-back:not(#updateBack)").forEach(back => {
   back.addEventListener("pointerdown", ev => { if (ev.target === back) closeModal(back); });

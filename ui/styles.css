@@ -3,7 +3,7 @@
   :root {
     --titlebar: 40px; /* must match TITLE_BAR in src/app.rs */
     --bg: #1b1a1e; --bar: #141317; --fg: #f4f2fa; --muted: rgba(244, 242, 250, .6);
-    --panel: rgba(17, 16, 20, .88); --menu: rgba(12, 11, 14, .86); /* see-through, but darker than the player buttons (.72) */ --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
+    --panel: rgba(17, 16, 20, .88); --menu: rgba(8, 7, 10, .9); /* see-through, but darker than the player buttons (.72) */ --line: rgba(255, 255, 255, .14); --hover: rgba(255, 255, 255, .12);
     /* Logo colours washed out almost to white: a holographic hint, barely visible */
     --holo: linear-gradient(90deg, #ffe4f2, #fff3dd 25%, #e5fbea 50%, #e2f5ff 75%, #ece6ff);
     --ease-out: cubic-bezier(.22, 1, .36, 1);
@@ -226,9 +226,9 @@
   .loader.show { opacity: 1; }
   .loader i { width: 5px; height: 5px; border-radius: 1px; background: var(--fg); }
 
-  /* Update prompt: transitions.dev-style modal (fade + scale), over a blurred, dimmed stage */
+  /* Update prompt: transitions.dev-style modal (fade + scale), over a dimmed stage (no blur: it smeared the player bar) */
   .modal-back { position: fixed; inset: var(--titlebar) 0 0 0; z-index: 45; display: grid; place-items: center;
-    background: rgba(17, 16, 20, .5); backdrop-filter: blur(10px); opacity: 0; visibility: hidden;
+    background: rgba(17, 16, 20, .5); opacity: 0; visibility: hidden;
     transition: opacity .18s, visibility 0s .18s; }
   .modal-back.open { opacity: 1; visibility: visible; transition: opacity .22s var(--ease-out), visibility 0s; }
   .modal { width: min(380px, calc(100vw - 32px)); padding: 22px 22px 18px; border-radius: 18px; text-align: center;

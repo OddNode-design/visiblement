@@ -1,6 +1,6 @@
 [package]
 name = "visiblement"
-version = "1.0.9"
+version = "1.0.10"
 edition = "2024"
 description = "Visiblement, a fast GPU-accelerated video player for Windows built on libmpv"
 license = "MIT"
