@@ -312,27 +312,32 @@ fn gl_view(parent: *mut c_void) -> Result<(Retained<AnyObject>, Retained<AnyObje
     const ERR: &str = "Impossible de créer la vue OpenGL de la fenêtre vidéo.";
     // NSOpenGLPFAOpenGLProfile = 99, NSOpenGLProfileVersion4_1Core = 0x4100, NSOpenGLPFADoubleBuffer = 5,
     // NSOpenGLPFAAccelerated = 73, NSOpenGLPFAAllowOfflineRenderers = 96, 0 ends the list.
-    let attributes: [u32; 7] = [99, 0x4100, 5, 73, 96, 0, 0];
+    // A Mac without a GPU (the CI virtual machine) has no accelerated renderer: then Apple's software one.
+    let attempts: [&[u32]; 2] = [&[99, 0x4100, 5, 73, 96, 0], &[99, 0x4100, 5, 96, 0]];
     // SAFETY: `parent` is tao's NSView of the video window, used on the main thread; selectors and
     // argument types follow AppKit's NSOpenGLPixelFormat / NSOpenGLView / NSView.
     unsafe {
         let parent = &*(parent as *const AnyObject);
         let format_class = AnyClass::get(c"NSOpenGLPixelFormat").ok_or(ERR)?;
         let view_class = AnyClass::get(c"NSOpenGLView").ok_or(ERR)?;
-        let alloc: Allocated<AnyObject> = msg_send![format_class, alloc];
-        let format: Option<Retained<AnyObject>> =
-            msg_send![alloc, initWithAttributes: attributes.as_ptr()];
-        let format = format.ok_or(ERR)?;
+        let format = attempts
+            .iter()
+            .find_map(|attributes| {
+                let alloc: Allocated<AnyObject> = msg_send![format_class, alloc];
+                let format: Option<Retained<AnyObject>> = msg_send![alloc, initWithAttributes: attributes.as_ptr()];
+                format
+            })
+            .ok_or(format!("{ERR} (NSOpenGLPixelFormat)"))?;
         let bounds: NSRect = msg_send![parent, bounds];
         let alloc: Allocated<AnyObject> = msg_send![view_class, alloc];
         let view: Option<Retained<AnyObject>> =
             msg_send![alloc, initWithFrame: bounds, pixelFormat: &*format];
-        let view = view.ok_or(ERR)?;
+        let view = view.ok_or(format!("{ERR} (NSOpenGLView)"))?;
         let _: () = msg_send![&*view, setWantsBestResolutionOpenGLSurface: true]; // Retina: draw in backing pixels
         let _: () = msg_send![&*view, setAutoresizingMask: 18usize]; // NSViewWidthSizable | NSViewHeightSizable
         let _: () = msg_send![parent, addSubview: &*view];
         let ctx: Option<Retained<AnyObject>> = msg_send![&*view, openGLContext];
-        let ctx = ctx.ok_or(ERR)?;
+        let ctx = ctx.ok_or(format!("{ERR} (openGLContext)"))?;
         let _: () = msg_send![&*ctx, setView: &*view];
         Ok((view, ctx))
     }
