@@ -617,9 +617,10 @@ fn load_mpv(dir: &Path) -> Result<(Library, Mpv), String> {
 
 {e}"))?;
     #[cfg(target_os = "macos")]
+    // The bundled copy's error is the useful one (a missing dependency, a bad signature...).
     let lib = unsafe { Library::new(dir.join("../Frameworks/libmpv.2.dylib")) }
-        .or_else(|_| unsafe { Library::new(dir.join("libmpv.2.dylib")) })
-        .or_else(|_| unsafe { Library::new("libmpv.2.dylib") })
+        .or_else(|first| unsafe { Library::new(dir.join("libmpv.2.dylib")) }.map_err(|_| first))
+        .or_else(|first| unsafe { Library::new("libmpv.2.dylib") }.map_err(|_| first))
         .map_err(|e| format!("libmpv.2.dylib introuvable (Contents/Frameworks).
 
 {e}"))?;

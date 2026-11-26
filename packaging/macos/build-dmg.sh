@@ -40,6 +40,10 @@ if otool -L "$C"/Frameworks/*.dylib | grep -E "$(brew --prefix)|/usr/local/(opt|
   exit 1
 fi
 
+# What libmpv now links to, for the CI log.
+otool -L "$C/Frameworks/libmpv.2.dylib" | head -40
+ls "$C/Frameworks" | wc -l
+
 # Ad-hoc signature: required for arm64 code to run at all. Not notarized (no Apple Developer account).
 codesign --force --sign - "$C"/Frameworks/*.dylib
 codesign --force --sign - "$APP"
