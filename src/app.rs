@@ -499,6 +499,16 @@ pub fn run() -> Result<(), String> {
         }
     };
     sync_video(&ui, &video, Some(&m), &Mode::Normal); // picture below the title bar from the start
+    // Frosted glass over the video under the page's menus (CSS blur can't reach mpv's window).
+    for (name, source) in [("blur", include_str!("blur.glsl")), ("blur2", include_str!("blur2.glsl"))] {
+        let path = std::env::temp_dir().join(format!("visiblement-{name}.glsl"));
+        // macOS draws through the render API's older renderer, which knows no DYNAMIC parameters.
+        #[cfg(target_os = "macos")]
+        let source = source.replace("//!TYPE DYNAMIC float", "//!TYPE float");
+        if std::fs::write(&path, source).is_ok() {
+            m.cmd(&["change-list", "glsl-shaders", "append", &path.to_string_lossy()]);
+        }
+    }
     // Before each file opens: turn WAV markers (cue points, After Effects XMP) into chapters.
     unsafe { (m.hook_add)(h, 0, c"on_load".as_ptr(), 0) };
     // NDI sources play as ndi://<name>: the app feeds mpv the frames it receives (src/ndi.rs).
@@ -656,6 +666,7 @@ pub fn run() -> Result<(), String> {
                             if on {
                                 let _ = std::fs::write(&shader, include_str!("360.glsl"));
                             }
+                            // A list: the menu blur shader stays loaded alongside.
                             m.cmd(&["change-list", "glsl-shaders", if on { "append" } else { "remove" }, shader.to_str().unwrap_or("")]);
                             m.set("keepaspect", if on { "no" } else { "yes" });
                         }
