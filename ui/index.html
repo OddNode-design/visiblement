@@ -16,7 +16,7 @@
     <span class="res" id="res"></span>
     <nav class="nav" id="nav">
       <div class="nav-item">
-        <button class="nav-btn">Média <i class="ico chev" data-i="chevron-down"></i></button>
+        <button class="nav-btn" aria-haspopup="menu" aria-expanded="false">Média <i class="ico chev" data-i="chevron-down"></i></button>
         <div class="dropdown">
           <button class="dd" data-act="open"><i class="ico" data-i="file"></i><span class="dd-text"><b>Ouvrir un fichier</b><small>Une vidéo, une image ou un son</small></span><kbd>Ctrl+O</kbd></button>
           <button class="dd" data-act="openFiles"><i class="ico" data-i="files"></i><span class="dd-text"><b>Ouvrir plusieurs fichiers</b><small>Ils s'enchaînent dans la playlist</small></span></button>
@@ -30,7 +30,7 @@
         </div>
       </div>
       <div class="nav-item">
-        <button class="nav-btn">Éditer <i class="ico chev" data-i="chevron-down"></i></button>
+        <button class="nav-btn" aria-haspopup="menu" aria-expanded="false">Éditer <i class="ico chev" data-i="chevron-down"></i></button>
         <div class="dropdown">
           <button class="dd" data-act="markIn"><i class="ico" data-i="arrow-left-to-line"></i><span class="dd-text"><b>Début de l'extrait ici</b><small>Place le point d'entrée</small></span><kbd>B</kbd></button>
           <button class="dd" data-act="markOut"><i class="ico" data-i="arrow-right-to-line"></i><span class="dd-text"><b>Fin de l'extrait ici</b><small>Place le point de sortie</small></span><kbd>N</kbd></button>
@@ -53,9 +53,9 @@
     </nav>
     <span class="grow"></span>
     <span class="pos" id="pos"></span>
-    <span class="wbtn" id="wMin" title="Réduire"><i class="ico" data-i="minus"></i></span>
-    <span class="wbtn" id="wMax" title="Agrandir"><i class="ico" data-i="square"></i></span>
-    <span class="wbtn close" id="wClose" title="Fermer"><i class="ico" data-i="x"></i></span>
+    <button class="wbtn" id="wMin" title="Réduire" aria-label="Réduire"><i class="ico" data-i="minus"></i></button>
+    <button class="wbtn" id="wMax" title="Agrandir" aria-label="Agrandir"><i class="ico" data-i="square"></i></button>
+    <button class="wbtn close" id="wClose" title="Fermer" aria-label="Fermer"><i class="ico" data-i="x"></i></button>
   </div>
 
   <div class="stage idle" id="stage">
@@ -122,7 +122,7 @@
 
     <div class="loader" id="loader"></div>
     <div class="drop"><div class="target"><i class="ico" data-i="plus"></i></div></div>
-    <div class="toast" id="toast"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <!-- Export / conversion in progress, with its stop button -->
     <div class="job" id="job" role="status"><span id="jobText"></span><span class="pct" id="jobPct"></span>
       <button id="jobStop" aria-label="Arrêter"><i class="ico" data-i="x"></i></button></div>
@@ -152,7 +152,7 @@
   </div>
   <div class="tip" id="tip"></div>
   <div class="modal-back" id="updateBack">
-    <div class="modal" role="dialog" aria-labelledby="updateTitle">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="updateTitle">
       <svg class="logo" viewBox="0 0 512 512" aria-hidden="true">
         <image href="cloud.svg" width="512" height="512"/>
         <g fill="#121114"><ellipse cx="226" cy="256" rx="21" ry="34"/><ellipse cx="286" cy="256" rx="21" ry="34"/></g>
@@ -168,7 +168,7 @@
     </div>
   </div>
   <div class="modal-back" id="convBack">
-    <div class="modal form conv" role="dialog" aria-labelledby="convTitle">
+    <div class="modal form conv" role="dialog" aria-modal="true" aria-labelledby="convTitle">
       <header class="conv-top">
         <h2 id="convTitle">Convertir</h2>
         <!-- Same switch as the Infos tabs: a white pill slides under the choice -->
@@ -212,10 +212,10 @@
     </div>
   </div>
   <div class="modal-back" id="netBack">
-    <div class="modal form" role="dialog" aria-labelledby="netTitle">
+    <div class="modal form" role="dialog" aria-modal="true" aria-labelledby="netTitle">
       <h2 id="netTitle">Ouvrir un flux réseau</h2>
       <p>Entrez l'adresse d'un flux ou d'une vidéo en ligne.</p>
-      <input class="field" id="netUrl" type="text" placeholder="https://… · rtsp://… · rtp://@:1234" spellcheck="false">
+      <input class="field" id="netUrl" type="url" inputmode="url" name="url" autocomplete="off" aria-label="Adresse du flux" placeholder="https://… · rtsp://… · rtp://@:1234" spellcheck="false">
       <div class="examples" id="netExamples">
         <button>http://www.example.com/stream.avi</button>
         <button>rtp://@:1234</button>
@@ -230,7 +230,7 @@
     </div>
   </div>
   <div class="modal-back" id="camBack">
-    <div class="modal form" role="dialog" aria-labelledby="camTitle">
+    <div class="modal form" role="dialog" aria-modal="true" aria-labelledby="camTitle">
       <h2 id="camTitle">Périphérique de capture</h2>
       <p id="camText">Recherche des caméras…</p>
       <div class="cam-list" id="camList"></div>
@@ -241,7 +241,7 @@
     </div>
   </div>
   <div class="modal-back" id="infoBack">
-    <div class="modal info" role="dialog" aria-labelledby="infoName">
+    <div class="modal info" role="dialog" aria-modal="true" aria-labelledby="infoName">
       <div class="info-head"><h2 id="infoName">Infos</h2><span id="infoSub"></span><button class="x-close" data-close aria-label="Fermer" data-tip="Fermer"><i class="ico" data-i="x"></i></button></div>
       <div class="tabs" id="infoTabs">
         <span class="pill"></span>

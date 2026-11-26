@@ -4,6 +4,8 @@ const win = $("win"), stage = $("stage");
 // macOS: shortcuts use Cmd where Windows uses Ctrl; the root gets a "mac" class for platform styling.
 const IS_MAC = /Mac/.test(navigator.platform);
 if (IS_MAC) document.documentElement.classList.add("mac");
+// Icon-only buttons: their tooltip, without the shortcut, is also their name for screen readers.
+document.querySelectorAll("button[data-tip]:not([aria-label])").forEach(b => b.setAttribute("aria-label", b.dataset.tip.replace(/\s*\(.*\)\s*$/, "")));
 // The shortcut labels in the menus, the Mac way: ⌘ for Ctrl, ⌥ for Alt.
 if (IS_MAC) document.querySelectorAll("kbd").forEach(k => k.textContent = k.textContent.replace(/Ctrl\+/g, "⌘").replace(/Alt\+/g, "⌥"));
 
@@ -645,10 +647,16 @@ $("updateLater").onclick = () => closeUpdate(false);
 // --- Navigation bar (Média / Éditer / Infos): menus open on hover, or on click
 const navItems = [...document.querySelectorAll(".nav-item")];
 let navTimer;
-function openNav(item) { navItems.forEach(i => i.classList.toggle("open", i === item && !!item.querySelector(".dropdown"))); closeAll(); hideTip(); }
+function openNav(item) {
+  navItems.forEach(i => i.classList.toggle("open", i === item && !!item.querySelector(".dropdown")));
+  syncNavExpanded(); closeAll(); hideTip();
+}
+// Screen readers: each menu button says whether its menu is open.
+const syncNavExpanded = () => navItems.forEach(i => i.querySelector(".nav-btn[aria-haspopup]")?.setAttribute("aria-expanded", i.classList.contains("open")));
 function closeNav() {
   const was = navItems.some(i => i.classList.contains("open")) || $("titlebar").classList.contains("menu-open");
   navItems.forEach(i => i.classList.remove("open"));
+  syncNavExpanded();
   setBurger(false);
   return was;
 }
@@ -695,7 +703,12 @@ navItems.forEach(item => {
 addEventListener("pointerdown", ev => { if (!ev.target.closest(".nav, .burger")) closeNav(); });
 
 // One modal at a time: opening Infos closes Convertir and the other way round.
-const modalOpen = id => { closeNav(); closeAll(); document.querySelectorAll(".modal-back.open").forEach(b => b.id !== id && closeModal(b)); $(id).classList.add("open"); };
+const modalOpen = id => {
+  closeNav(); closeAll(); document.querySelectorAll(".modal-back.open").forEach(b => b.id !== id && closeModal(b));
+  $(id).classList.add("open");
+  // Keyboard users land in the dialog (its first control), not on what is behind it.
+  setTimeout(() => $(id).querySelector("input, button:not([disabled]), [tabindex]")?.focus({ preventScroll: true }), 60);
+};
 function closeModal(back) { back.classList.remove("open"); if (back.id === "infoBack") clearInterval(infoTimer); }
 document.querySelectorAll(".modal-back:not(#updateBack)").forEach(back => {
   back.addEventListener("pointerdown", ev => { if (ev.target === back) closeModal(back); });
