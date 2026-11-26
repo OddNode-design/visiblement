@@ -534,12 +534,14 @@
   .toast.long { border-radius: 12px; max-width: min(560px, calc(100vw - 32px)); white-space: normal; text-align: left; }
   .toast.long small { display: block; margin-top: 4px; font: 11.5px/1.45 Roboto, sans-serif; color: var(--muted); white-space: pre-line; overflow-wrap: anywhere; }
   /* Context menus (right click, settings, subtitles, nav menus, burger panel), dialogs and messages:
-     a solid dark background and a fine light edge. No blur: CSS can't reach the video (mpv draws it
-     in its own window below the page), and blurring it from mpv never stayed in step with the panels. */
+     frosted glass at 90%. The CSS blur reaches the page; over the video, mpv blurs the picture under the
+     open panels itself (src/blur.glsl), since CSS can't see its window. */
   .menu, .dropdown, .titlebar.compact .nav, .modal, .toast, .job, .notice {
-    background: rgba(9, 10, 14, .98); backdrop-filter: none; -webkit-backdrop-filter: none; /* #090A0E at 98% */
+    background: rgba(9, 10, 14, .9); backdrop-filter: blur(28px) saturate(1.4); -webkit-backdrop-filter: blur(28px) saturate(1.4);
     border: 1px solid rgba(255, 255, 255, .12); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08), 0 18px 50px rgba(0, 0, 0, .45);
   }
+  /* Home screen: the saturation boost made the colourful mascot glow behind a menu. Plain blur there. */
+  body:has(.stage.idle) :is(.menu, .dropdown, .titlebar.compact .nav, .modal) { backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); }
   /* Keyboard: a visible focus ring on everything focusable (the "all: unset" buttons lost theirs). */
   :is(button, [tabindex], input, .dd):focus-visible { outline: 2px solid rgba(255, 255, 255, .55); outline-offset: 2px; }
   .stage.hide-ui .controls:focus-within { opacity: 1; } /* never hide the control that has the focus */
