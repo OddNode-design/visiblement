@@ -28,6 +28,16 @@ jobs:
             exit 1
           fi
 
+      - name: Never lock the screen
+        run: |
+          # Idle for a few minutes while it sets up, the Mac locked its screen, and runner's password is
+          # unknown: no sleep, no screen saver, no password on wake, and an assertion that keeps it awake.
+          sudo pmset -a displaysleep 0 sleep 0 disksleep 0
+          defaults -currentHost write com.apple.screensaver idleTime -int 0
+          defaults write com.apple.screensaver askForPassword -int 0
+          sudo defaults write /Library/Preferences/com.apple.screensaver loginWindowIdleTime -int 0
+          nohup caffeinate -dimsu >/dev/null 2>&1 &
+
       - name: Install the latest Visiblement
         env:
           GH_TOKEN: ${{ github.token }}
@@ -84,6 +94,7 @@ jobs:
           python3 -m websockify --web "$RUNNER_TEMP/novnc" 6080 localhost:5900 >"$RUNNER_TEMP/websockify.log" 2>&1 &
           m=$(printf '%s' "$MINUTES" | tr -cd '0-9'); m=${m:-60}; [ "$m" -gt 350 ] && m=350
           end=$(( $(date +%s) + m * 60 ))
+          caffeinate -dimsu &
           announced=""; announced2=""
           while [ "$(date +%s)" -lt "$end" ]; do
             # A fresh tunnel whenever the previous one is gone (cloudflared can drop the connection).
