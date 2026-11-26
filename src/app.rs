@@ -558,7 +558,11 @@ pub fn run() -> Result<(), String> {
                     loading = on;
                     eval(&webview, &format!("window.vb && vb.loading({on})"));
                 }
-                UserEvent::VideoSize(w, h) => fit_to_video(&ui, &mode, w, h),
+                UserEvent::VideoSize(w, h) => {
+                    fit_to_video(&ui, &mode, w, h);
+                    // macOS sends no Resized for a size the app sets itself: the video window would stay behind.
+                    sync_video(&ui, &video, Some(&m), &mode);
+                }
                 UserEvent::Toast(msg) => eval(&webview, &format!("window.vb && vb.toast({})", json!(msg))),
                 UserEvent::Eval(js) => eval(&webview, &js),
                 // Opened from Explorer while running: replaces what plays (the playlist is built
