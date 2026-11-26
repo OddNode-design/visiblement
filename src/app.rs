@@ -759,6 +759,10 @@ pub fn run() -> Result<(), String> {
                             }
                             "fs" => {
                                 grab = None;
+                                // macOS: menu bar and Dock first. Hiding them after the window took the whole
+                                // screen sent it back to its previous frame.
+                                #[cfg(target_os = "macos")]
+                                win::presentation(!matches!(mode, Mode::Fullscreen { .. }));
                                 mode = match mode {
                                     Mode::Fullscreen { prev, was_max } => {
                                         win::set_rect(hnd(&ui), was_max.map_or(prev, |_| prev));
