@@ -26,6 +26,9 @@ jobs:
         run: bash packaging/macos/build-dmg.sh
       - name: Smoke test (opens a video, takes screenshots)
         run: bash packaging/macos/smoke-test.sh
+      - name: Filmed tour (menus, dialogs, resize, fullscreen)
+        continue-on-error: true
+        run: bash packaging/macos/tour.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -36,4 +39,5 @@ jobs:
             dist/smoke/*.log
             dist/smoke/*.txt
             dist/smoke/*.ips
+            dist/tour/*
           if-no-files-found: warn
