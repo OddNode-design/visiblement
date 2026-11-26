@@ -176,6 +176,7 @@
           <span class="pill"></span>
           <button data-src="file" class="on">Fichier ouvert</button><button data-src="seq">Séquence d'images</button>
         </div>
+        <button class="x-close" data-close aria-label="Fermer" data-tip="Fermer"><i class="ico" data-i="x"></i></button>
       </header>
       <div class="conv-body">
         <nav class="conv-codecs" id="convCodecs" aria-label="Codec"></nav>
@@ -205,7 +206,6 @@
       <footer class="conv-foot">
         <span class="conv-out mono" id="convOut"></span>
         <div class="actions">
-          <button class="later" data-close>Annuler</button>
           <button class="go" id="convGo">Convertir…</button>
         </div>
       </footer>
@@ -242,7 +242,7 @@
   </div>
   <div class="modal-back" id="infoBack">
     <div class="modal info" role="dialog" aria-labelledby="infoName">
-      <div class="info-head"><h2 id="infoName">Infos</h2><span id="infoSub"></span></div>
+      <div class="info-head"><h2 id="infoName">Infos</h2><span id="infoSub"></span><button class="x-close" data-close aria-label="Fermer" data-tip="Fermer"><i class="ico" data-i="x"></i></button></div>
       <div class="tabs" id="infoTabs">
         <span class="pill"></span>
         <button class="on" data-tab="general">Général</button>
@@ -251,7 +251,6 @@
         <button data-tab="stats">Statistiques</button>
       </div>
       <div class="info-body" id="infoBody"></div>
-      <div class="actions"><button class="later" data-close>Fermer</button></div>
     </div>
   </div>
   <div class="edge"></div>
