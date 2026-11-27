@@ -26,6 +26,22 @@ jobs:
         run: bash packaging/macos/build-dmg.sh
       - name: Smoke test (opens a video, takes screenshots)
         run: bash packaging/macos/smoke-test.sh
+      - name: Light copy of a heavy file (proxy.rs)
+        continue-on-error: true
+        env:
+          DYLD_FALLBACK_LIBRARY_PATH: /opt/homebrew/lib
+        run: |
+          mkdir -p dist/heavy
+          # A 5K ProRes 4444, ~370 Mpixels/s: above the "too heavy" threshold.
+          ffmpeg -v error -y -f lavfi -i "testsrc2=size=5120x2880:rate=25:duration=6" -c:v prores_ks -profile:v 4444             -pix_fmt yuva444p10le dist/heavy/heavy.mov
+          ls -la dist/heavy
+          VB_HEAVY="$PWD/dist/heavy/heavy.mov" cargo test --release -p visiblement light_copy -- --ignored --nocapture 2>&1 | tee dist/heavy/test.txt
+          copy=$(ls "$HOME/Library/Application Support/Visiblement/proxies/"*.mp4 | head -1)
+          ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt,bit_rate -of default=nw=1 "$copy" | tee -a dist/heavy/test.txt
+          ffmpeg -hide_banner -v error -stats -i "$copy" -f null - 2>&1 | tail -1 | tee -a dist/heavy/test.txt
+          w=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$copy")
+          h=$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$copy")
+          ffmpeg -hide_banner -i dist/heavy/heavy.mov -i "$copy" -filter_complex             "[0:v]select=eq(n\,60),scale=$w:$h:flags=lanczos,format=yuv420p[a];[1:v]select=eq(n\,60),format=yuv420p[b];[a][b]ssim"             -frames:v 1 -f null - 2>&1 | grep SSIM | tee -a dist/heavy/test.txt
       - name: Filmed tour (menus, dialogs, resize, fullscreen)
         continue-on-error: true
         run: bash packaging/macos/tour.sh
@@ -40,4 +56,5 @@ jobs:
             dist/smoke/*.txt
             dist/smoke/*.ips
             dist/tour/*
+            dist/heavy/test.txt
           if-no-files-found: warn
