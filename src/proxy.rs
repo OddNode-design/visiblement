@@ -82,9 +82,18 @@ pub fn check(m: Mpv) {
     let seconds = m.num("duration");
     let bits = std::fs::metadata(&path).map_or(0.0, |md| md.len() as f64 * 8.0) / seconds.max(0.001);
     let heavy = (INTRA.contains(&codec.as_str()) && w * h * fps > HEAVY_PIXELS) || bits > HEAVY_BITS;
-    if heavy && w > 0.0 && h > 0.0 && m.get("current-tracks/video/image").as_deref() != Some("yes") {
-        build(m, path, w, h);
+    if !heavy || w <= 0.0 || h <= 0.0 || m.get("current-tracks/video/image").as_deref() == Some("yes") {
+        return;
     }
+    // Decoded by the hardware (a Mac's ProRes engine through VideoToolbox, a graphics card): it keeps
+    // up on its own, no copy needed. The decoder settles just after the file loads: look a moment later.
+    thread::spawn(move || {
+        thread::sleep(std::time::Duration::from_millis(800));
+        let hw = m.get("hwdec-current").is_some_and(|h| !h.is_empty() && h != "no");
+        if !hw && m.get("path").as_deref() == Some(path.as_str()) {
+            build(m, path, w, h);
+        }
+    });
 }
 
 fn build(m: Mpv, path: String, w: f64, h: f64) {
@@ -106,7 +115,7 @@ fn build(m: Mpv, path: String, w: f64, h: f64) {
         let (tw, th) = (((w * k / 2.0).round() * 2.0) as i64, ((h * k / 2.0).round() * 2.0) as i64);
         let scale = |pix: &str| format!("lavfi=[scale={tw}:{th}:flags=lanczos,format={pix}]");
         let part = copy.with_extension("part.mp4");
-        let progress = |pct: f64| crate::editor::job("Préparation de la lecture fluide", pct);
+        let progress = |pct: f64| crate::editor::job("Chargement…", pct);
         let audio = |s: &mut Vec<(&'static str, String)>| s.extend([("oac", "aac".to_string()), ("oacopts", "b=256k".to_string())]);
         // 1. NVIDIA, 10-bit HEVC at a constant quality: measured on a 16-megapixel ProRes 4444, qp 18 keeps
         //    an SSIM of about 0.99 against the original scaled down (the encoder's default rate gave 0.93).
@@ -136,7 +145,7 @@ fn build(m: Mpv, path: String, w: f64, h: f64) {
         if !ok {
             let _ = std::fs::remove_file(&part);
         }
-        crate::editor::job_done(&m, ok, "Lecture fluide prête".into(), "Lecture fluide impossible", "Lecture fluide annulée");
+        crate::editor::job_done(&m, ok, "Chargement terminé".into(), "Chargement impossible", "Chargement annulé");
         BUILDING.store(false, Ordering::Relaxed);
         if ok {
             trim(&copy);
@@ -225,6 +234,10 @@ mod tests {
         let copy = copy_for(&file).unwrap();
         let _ = std::fs::remove_file(&copy);
         check(m);
+        let t1 = std::time::Instant::now();
+        while !BUILDING.load(Ordering::Relaxed) && t1.elapsed().as_secs() < 5 {
+            thread::sleep(std::time::Duration::from_millis(100));
+        }
         assert!(BUILDING.load(Ordering::Relaxed), "not detected as heavy");
         let t0 = std::time::Instant::now();
         while BUILDING.load(Ordering::Relaxed) && t0.elapsed().as_secs() < 900 {

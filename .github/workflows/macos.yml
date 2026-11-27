@@ -35,7 +35,9 @@ jobs:
           # A 5K ProRes 4444, ~370 Mpixels/s: above the "too heavy" threshold.
           ffmpeg -v error -y -f lavfi -i "testsrc2=size=5120x2880:rate=25:duration=6" -c:v prores_ks -profile:v 4444             -pix_fmt yuva444p10le dist/heavy/heavy.mov
           ls -la dist/heavy
-          VB_HEAVY="$PWD/dist/heavy/heavy.mov" cargo test --release -p visiblement light_copy -- --ignored --nocapture 2>&1 | tee dist/heavy/test.txt
+          # Does this Mac decode ProRes in hardware (VideoToolbox)? Then the app plays it without a copy.
+          mpv --no-config --hwdec=auto-safe --vo=null --ao=null --frames=20 --msg-level=vd=v dist/heavy/heavy.mov 2>&1             | grep -i "hardware decoding\|software decoding" | tee dist/heavy/test.txt
+          VB_HEAVY="$PWD/dist/heavy/heavy.mov" cargo test --release -p visiblement light_copy -- --ignored --nocapture 2>&1 | tee -a dist/heavy/test.txt
           copy=$(ls "$HOME/Library/Application Support/Visiblement/proxies/"*.mp4 | head -1)
           ffprobe -v error -show_entries stream=codec_name,width,height,pix_fmt,bit_rate -of default=nw=1 "$copy" | tee -a dist/heavy/test.txt
           ffmpeg -hide_banner -v error -stats -i "$copy" -f null - 2>&1 | tail -1 | tee -a dist/heavy/test.txt
