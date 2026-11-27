@@ -265,12 +265,12 @@ pub fn encode(m: &Mpv, src: &str, out: &Path, a: Option<f64>, b: Option<f64>, se
 pub static CANCEL: AtomicBool = AtomicBool::new(false);
 
 /// The progress pill of the page (label, percentage), then its end.
-fn job(label: &str, pct: f64) {
+pub(crate) fn job(label: &str, pct: f64) {
     crate::app::eval_js(&format!("window.vb && vb.job({}, {})", serde_json::json!(label), pct.round()));
 }
 
 /// The result of an export / conversion: the pill goes, a toast says how it ended.
-fn job_done(m: &Mpv, ok: bool, done: String, failed: &str, cancelled: &str) {
+pub(crate) fn job_done(m: &Mpv, ok: bool, done: String, failed: &str, cancelled: &str) {
     crate::app::eval_js("window.vb && vb.jobDone()");
     let why = LAST_ERROR.lock().unwrap().clone();
     let failed = if why.is_empty() { failed.to_string() } else { format!("{failed}\n{why}") };

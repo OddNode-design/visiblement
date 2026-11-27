@@ -810,7 +810,10 @@ function renderInfo() {
     body.push(rows([
       ["Nom", d.filename], ["Dossier", path.slice(0, path.length - name.length) || "–"], ["Taille", bytes(size)],
       ["Durée", dur ? clockLong(dur) : "–"], ["Format", formatName(d["file-format"])],
-      ["Résolution", vp.w ? `${vp.w} × ${vp.h}` : null], ["Images/s", d["container-fps"] ? nf(d["container-fps"], 3) : null],
+      // Playing a light copy (heavy file): the original's size, and a word on what plays.
+      ["Résolution", d.light ? `${d.light.w} × ${d.light.h}` : vp.w ? `${vp.w} × ${vp.h}` : null],
+      ["Lecture", d.light ? `Version allégée ${vp.w} × ${vp.h}, l'original sert aux conversions et aux exports` : null],
+      ["Images/s", d["container-fps"] ? nf(d["container-fps"], 3) : null],
       ["Nombre d'images", d["estimated-frame-count"]], ["Débit moyen", size && dur ? rate(size * 8 / dur) : null],
       ["Créé le", date(d.created)], ["Modifié le", date(d.modified)],
     ]));
@@ -818,6 +821,7 @@ function renderInfo() {
     const meta = parse(d.metadata) || {}, entries = Object.entries(meta);
     body.push(entries.length ? rows(entries) : el("div", "empty", "Ce fichier ne contient pas de métadonnées."));
   } else if (infoTab === "codec") {
+    if (d.light) body.push(el("div", "empty", `Lecture sur une version allégée (HEVC). Original : ${d.light.codec || "?"}, ${d.light.pixfmt || "?"}.`));
     for (const t of parse(d["track-list"]) || []) {
       body.push(el("h3", "", `${TRACK[t.type] || t.type} ${t.id}${t.selected ? " · active" : ""}`));
       const common = [["Codec", t["codec-desc"] ? `${t.codec} (${t["codec-desc"]})` : t.codec], ["Langue", t.lang], ["Titre", t.title]];

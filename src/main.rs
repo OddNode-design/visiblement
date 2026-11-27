@@ -11,6 +11,7 @@ mod editor;
 #[cfg(target_os = "macos")]
 mod mac;
 mod markers;
+mod proxy;
 mod ndi;
 mod stream;
 mod update;
@@ -54,6 +55,8 @@ const EVENT_HOOK: c_int = 25;
 // mpv only draws the picture; the interface is ui/index.html in a WebView on top (see app.rs).
 const OPTIONS: &[(&str, &str)] = &[
     ("vo", "gpu-next"),
+    // A file too heavy to decode in time plays on, dropping frames, instead of slowing down (see proxy.rs).
+    ("framedrop", "decoder+vo"),
     ("hwdec", "auto-safe"),
     ("idle", "yes"),
     ("force-window", "yes"),
@@ -335,7 +338,8 @@ fn save_frame(m: Mpv) -> thread::JoinHandle<()> {
             .save_file();
         if let Some(p) = target {
             // mpv picks the image format from the extension.
-            let ok = m.cmd(&["screenshot-to-file", &p.to_string_lossy(), "video"]);
+            // Playing a light copy: the frame comes from the original, at full resolution.
+            let ok = if proxy::active(&m) { proxy::grab_original(&m, &p) } else { m.cmd(&["screenshot-to-file", &p.to_string_lossy(), "video"]) };
             m.toast(if ok { "Frame enregistrée" } else { "Échec de l'enregistrement" });
         }
         if !was_paused {
@@ -347,7 +351,7 @@ fn save_frame(m: Mpv) -> thread::JoinHandle<()> {
 /// Grab the current frame and put it on the clipboard as an image.
 fn copy_frame(m: Mpv) -> thread::JoinHandle<()> {
     let tmp = std::env::temp_dir().join(format!("visiblement-frame-{}.png", std::process::id()));
-    let grabbed = m.cmd(&["screenshot-to-file", &tmp.to_string_lossy(), "video"]);
+    let grabbed = if proxy::active(&m) { proxy::grab_original(&m, &tmp) } else { m.cmd(&["screenshot-to-file", &tmp.to_string_lossy(), "video"]) };
     thread::spawn(move || {
         let ok = grabbed && png_to_clipboard(&tmp).is_ok();
         let _ = std::fs::remove_file(&tmp);
@@ -590,6 +594,9 @@ fn media_info(m: &Mpv) -> serde_json::Value {
         };
         out.insert("modified".into(), ms(meta.modified()).into());
         out.insert("created".into(), ms(meta.created()).into());
+    }
+    if let Some(about) = proxy::original_info(m) {
+        out.insert("light".into(), about);
     }
     serde_json::Value::Object(out)
 }

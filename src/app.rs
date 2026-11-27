@@ -261,11 +261,21 @@ fn mpv_events(m: Mpv) {
                     eval_js(&format!("window.vb && vb.recent({})", json!(crate::recent_media())));
                 }
                 send(UserEvent::VideoSize(m.num("video-params/dw"), m.num("video-params/dh")));
+                // Back on a file whose light copy just got ready: where it was. Otherwise: too heavy?
+                let resume = crate::proxy::RESUME.lock().ok().and_then(|mut r| r.take());
+                match resume {
+                    Some((t, paused)) => {
+                        m.cmd(&["seek", &t.to_string(), "absolute+exact"]);
+                        m.set("pause", if paused { "yes" } else { "no" });
+                    }
+                    None => crate::proxy::check(m),
+                }
             }
             EVENT_END_FILE => send(UserEvent::Loading(false)),
             EVENT_HOOK => {
                 // SAFETY: data points to an mpv_event_hook { name, id }.
                 let id = unsafe { *(ev.data as *const u8).add(std::mem::size_of::<*const c_char>()).cast::<u64>() };
+                crate::proxy::redirect(&m); // a heavy file with a light copy plays that copy
                 load_markers(&m);
                 unsafe { (m.hook_continue)(m.h, id) };
             }
